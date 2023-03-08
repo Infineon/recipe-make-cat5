@@ -1,0 +1,369 @@
+{
+    // See https://go.microsoft.com/fwlink/?LinkId=733558
+    // for the documentation about the tasks.json format
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build: Build [Debug]",
+            "type": "process",
+
+            "windows" : {
+                "command": "${config:modustoolbox.toolsPath}/modus-shell/bin/bash.exe" ,
+                "args": [
+                    "--norc",
+                    "-c",
+                    "export PATH=/bin:/usr/bin:$PATH ; ${config:modustoolbox.toolsPath}/modus-shell/bin/make.exe -j CONFIG=Debug TARGET=&&TARGET&& build"
+                ]
+            },
+            "linux" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j CONFIG=Debug TARGET=&&TARGET&& build"
+                ]
+            },
+            "osx" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j CONFIG=Debug TARGET=&&TARGET&& build"
+                ]
+            },
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Build: Clean and Rebuild [Debug]",
+            "type": "process",
+
+            "windows" : {
+                "command": "${config:modustoolbox.toolsPath}/modus-shell/bin/bash.exe" ,
+                "args": [
+                    "--norc",
+                    "-c",
+                    "export PATH=/bin:/usr/bin:$PATH ; ${config:modustoolbox.toolsPath}/modus-shell/bin/make.exe -j CONFIG=Debug TARGET=&&TARGET&& clean ; ${config:modustoolbox.toolsPath}/modus-shell/bin/make.exe -j CONFIG=Debug TARGET=&&TARGET&& build"
+                ]
+            },
+            "linux" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j CONFIG=Debug TARGET=&&TARGET&& clean ; make -j CONFIG=Debug TARGET=&&TARGET&& build"
+                ]
+            },
+            "osx" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j CONFIG=Debug TARGET=&&TARGET&& clean ; make -j CONFIG=Debug TARGET=&&TARGET&& build"
+                ]
+            },
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Build: Clean [Debug]",
+            "type": "process",
+
+            "windows" : {
+                "command": "${config:modustoolbox.toolsPath}/modus-shell/bin/bash.exe" ,
+                "args": [
+                    "--norc",
+                    "-c",
+                    "export PATH=/bin:/usr/bin:$PATH ; ${config:modustoolbox.toolsPath}/modus-shell/bin/make.exe -j CONFIG=Debug TARGET=&&TARGET&& clean"
+                ]
+            },
+            "linux" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j CONFIG=Debug TARGET=&&TARGET&& clean"
+                ]
+            },
+            "osx" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j CONFIG=Debug TARGET=&&TARGET&& clean"
+                ]
+            },
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Build: Build [Release]",
+            "type": "process",
+            "windows" : {
+                "command": "${config:modustoolbox.toolsPath}/modus-shell/bin/bash.exe" ,
+                "args": [
+                    "--norc",
+                    "-c",
+                    "export PATH=/bin:/usr/bin:$PATH ; ${config:modustoolbox.toolsPath}/modus-shell/bin/make.exe -j CONFIG=Release TARGET=&&TARGET&& build"
+                ]
+            },
+            "linux" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j CONFIG=Release TARGET=&&TARGET&& build"
+                ]
+            },
+            "osx" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j CONFIG=Release TARGET=&&TARGET&& build"
+                ]
+            },
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Build: Clean and Rebuild [Release]",
+            "type": "process",
+            "windows" : {
+                "command": "${config:modustoolbox.toolsPath}/modus-shell/bin/bash.exe" ,
+                "args": [
+                    "--norc",
+                    "-c",
+                    "export PATH=/bin:/usr/bin:$PATH ; ${config:modustoolbox.toolsPath}/modus-shell/bin/make.exe -j CONFIG=Release TARGET=&&TARGET&& clean ; ${config:modustoolbox.toolsPath}/modus-shell/bin/make.exe -j CONFIG=Release TARGET=&&TARGET&& build"
+                ]
+            },
+            "linux" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j CONFIG=Release TARGET=&&TARGET&& clean ; make -j CONFIG=Release TARGET=&&TARGET&& build"
+                ]
+            },
+            "osx" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j CONFIG=Release TARGET=&&TARGET&& clean ; make -j CONFIG=Release TARGET=&&TARGET&& build"
+                ]
+            },
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Build: Clean [Release]",
+            "type": "process",
+            "windows" : {
+                "command": "${config:modustoolbox.toolsPath}/modus-shell/bin/bash.exe" ,
+                "args": [
+                    "--norc",
+                    "-c",
+                    "export PATH=/bin:/usr/bin:$PATH ; ${config:modustoolbox.toolsPath}/modus-shell/bin/make.exe -j CONFIG=Release TARGET=&&TARGET&& clean"
+                ]
+            },
+            "linux" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j CONFIG=Release TARGET=&&TARGET&& clean"
+                ]
+            },
+            "osx" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j CONFIG=Release TARGET=&&TARGET&& clean"
+                ]
+            },
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Program: build and download app [Release]",
+            "type": "process",
+            "windows" : {
+                "command": "${config:modustoolbox.toolsPath}/modus-shell/bin/bash.exe" ,
+                "args": [
+                    "--norc",
+                    "-c",
+                    "export PATH=/bin:/usr/bin:$PATH ; ${config:modustoolbox.toolsPath}/modus-shell/bin/make.exe -j TARGET=&&TARGET&& CONFIG=Release program"
+                ]
+            },
+            "linux" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j TARGET=&&TARGET&& CONFIG=Release program"
+                ]
+            },
+            "osx" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j TARGET=&&TARGET&& CONFIG=Release program"
+                ]
+            },
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Program: build and download app [Debug]",
+            "type": "process",
+            "windows" : {
+                "command": "${config:modustoolbox.toolsPath}/modus-shell/bin/bash.exe" ,
+                "args": [
+                    "--norc",
+                    "-c",
+                    "export PATH=/bin:/usr/bin:$PATH ; ${config:modustoolbox.toolsPath}/modus-shell/bin/make.exe -j TARGET=&&TARGET&& CONFIG=Debug program"
+                ]
+            },
+            "linux" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j TARGET=&&TARGET&& CONFIG=Debug program"
+                ]
+            },
+            "osx" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j TARGET=&&TARGET&& CONFIG=Debug program"
+                ]
+            },
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Program: just download app [Release]",
+            "type": "process",
+            "windows" : {
+                "command": "${config:modustoolbox.toolsPath}/modus-shell/bin/bash.exe" ,
+                "args": [
+                    "--norc",
+                    "-c",
+                    "export PATH=/bin:/usr/bin:$PATH ; ${config:modustoolbox.toolsPath}/modus-shell/bin/make.exe -j TARGET=&&TARGET&& CONFIG=Release qprogram"
+                ]
+            },
+            "linux" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j TARGET=&&TARGET&& CONFIG=Release qprogram"
+                ]
+            },
+            "osx" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j TARGET=&&TARGET&& CONFIG=Release qprogram"
+                ]
+            },
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Program: just download app [Debug]",
+            "type": "process",
+            "windows" : {
+                "command": "${config:modustoolbox.toolsPath}/modus-shell/bin/bash.exe" ,
+                "args": [
+                    "--norc",
+                    "-c",
+                    "export PATH=/bin:/usr/bin:$PATH ; ${config:modustoolbox.toolsPath}/modus-shell/bin/make.exe -j TARGET=&&TARGET&& CONFIG=Debug qprogram"
+                ]
+            },
+            "linux" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j TARGET=&&TARGET&& CONFIG=Debug qprogram"
+                ]
+            },
+            "osx" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make -j TARGET=&&TARGET&& CONFIG=Debug qprogram"
+                ]
+            },
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "Tool: Library Manager",
+            "type": "process",
+            "windows" : {
+                "command": "${config:modustoolbox.toolsPath}/modus-shell/bin/bash.exe" ,
+                "args": [
+                    "--norc",
+                    "-c",
+                    "export PATH=/bin:/usr/bin:$PATH ; ${config:modustoolbox.toolsPath}/modus-shell/bin/make.exe modlibs MTB__JOB_BACKGROUND="
+                ]
+            },
+            "linux" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make modlibs MTB__JOB_BACKGROUND="
+                ]
+            },
+            "osx" : {
+                "command": "bash",
+                "args": [
+                    "--norc",
+                    "-c",
+                    "make modlibs MTB__JOB_BACKGROUND="
+                ]
+            },
+            "problemMatcher": "$gcc"
+        }
+    ]
+}
