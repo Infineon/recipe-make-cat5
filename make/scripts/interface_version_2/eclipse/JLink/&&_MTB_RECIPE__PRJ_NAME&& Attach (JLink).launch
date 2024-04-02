@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <launchConfiguration type="ilg.gnumcueclipse.debug.gdbjtag.jlink.launchConfigurationType">
+<stringAttribute key="com.cypress.studio.launch.owner.0" value="&&PROJECT_UUID&&"/>
 <stringAttribute key="com.cypress.studio.launch.mode" value="debug"/>
 <booleanAttribute key="ilg.gnumcueclipse.debug.gdbjtag.jlink.doConnectToRunning" value="true"/>
 <booleanAttribute key="ilg.gnumcueclipse.debug.gdbjtag.jlink.doContinue" value="false"/>
@@ -66,10 +67,10 @@
 <intAttribute key="org.eclipse.cdt.launch.ATTR_BUILD_BEFORE_LAUNCH_ATTR" value="0"/>
 <stringAttribute key="org.eclipse.cdt.launch.COREFILE_PATH" value=""/>
 <stringAttribute key="org.eclipse.cdt.launch.PROGRAM_NAME" value="&&_MTB_RECIPE__PROG_FILE&&"/>
-<stringAttribute key="org.eclipse.cdt.launch.PROJECT_ATTR" value="&&PRJ_NAME&&"/>
+<stringAttribute key="org.eclipse.cdt.launch.PROJECT_ATTR" value="&&_MTB_RECIPE__PRJ_NAME&&"/>
 <booleanAttribute key="org.eclipse.cdt.launch.PROJECT_BUILD_CONFIG_AUTO_ATTR" value="true"/>
 <listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_PATHS">
-<listEntry value="/&&PRJ_NAME&&"/>
+<listEntry value="/&&_MTB_RECIPE__PRJ_NAME&&"/>
 </listAttribute>
 <listAttribute key="org.eclipse.debug.core.MAPPED_RESOURCE_TYPES">
 <listEntry value="4"/>

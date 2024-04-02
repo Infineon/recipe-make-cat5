@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# Copyright 2016-2023, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -63,11 +63,15 @@ sub main
         $bracket_count-- if $line =~ /^\s*\}/;
         if($bracket_count == 0) {
             if($line =~ /^\s*DIRECT_LOAD\s*=/) {
-                if($line !~ /\.pre_init_cfg /) {
+                if($line !~ /(\.pre_init_cfg|PRE_INIT_CFG)/) {
                     $direct_load_lines = 1;
                 }
+				else
+				{
+					$line =~ s/DIRECT_LOAD/ENTRY \"Data\"/;
+				}
             }
-            if($line =~ /^\s*ENTRY\s*=/) {
+            if($line =~ /^\s*ENTRY\s*/) {
                 $direct_load_lines = 0;
             }
         }

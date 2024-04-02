@@ -1,5 +1,5 @@
 #
-# Copyright 2016-2023, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -35,8 +35,44 @@ ifeq ($(WHICHFILE),true)
 $(info Processing $(lastword $(MAKEFILE_LIST)))
 endif
 
+# add recipe setup
+MTB_RECIPE__ENTRY_ARG:=$(MTB_TOOLCHAIN_$(TOOLCHAIN)__ENTRY_ARG)
+MTB_RECIPE__EXTRA_SYMBOLS_ARG:=$(MTB_TOOLCHAIN_$(TOOLCHAIN)__SYMBOLS_ARG)
+MTB_RECIPE__LIBPATH_ARG:=$(MTB_TOOLCHAIN_$(TOOLCHAIN)__LIBPATH_ARG)
+MTB_RECIPE__C_LIBRARY_ARG:=$(MTB_TOOLCHAIN_$(TOOLCHAIN)__C_LIBRARY_ARG)
+MTB_RECIPE__EXTRA_LIBS:=$(addprefix $(MTB_RECIPE__C_LIBRARY_ARG),$(MTB_TOOLCHAIN_$(TOOLCHAIN)__EXTRA_LIBS))
+
+# Enable CAT5 and THREADX support for all cat5 devices
+MTB_RECIPE__COMPONENT+=CAT5 THREADX
+
+# Linker Script generated in prebuild by script
+ifneq ($(MTB_RECIPE__LINKER_SCRIPT),)
+MTB_RECIPE__GENERATED_LINKER_SCRIPT:="$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).$(MTB_TOOLCHAIN_$(TOOLCHAIN)__SUFFIX_LS)"
+else
+$(call mtb__error,Unable to find linker script.)
+endif # ($(MTB_RECIPE__LINKER_SCRIPT),)
+
+# use public symbols from patch.sym generated in mtb-pdl-cat5
+ifeq ($(CY_CORE_PATCH_SYMBOLS),)
+  ifeq ($(NO_OBFS),)
+    MTB_RECIPE__PATCH_SYMBOLS:=$(CY_CORE_PATCH:.elf=.$(MTB_TOOLCHAIN_$(TOOLCHAIN)__SUFFIX_SYMBOLS))
+  else
+    MTB_RECIPE__PATCH_SYMBOLS:=$(CY_CORE_PATCH)
+  endif
+else
+  MTB_RECIPE__PATCH_SYMBOLS:=$(CY_CORE_PATCH_SYMBOLS:.sym=.$(MTB_TOOLCHAIN_$(TOOLCHAIN)__SUFFIX_SYMBOLS))
+endif
+
 #
-# Flags construction
+# linker flags
+#
+MTB_RECIPE__LDFLAGS_POSTBUILD:=$(LDFLAGS) $(MTB_TOOLCHAIN_$(TOOLCHAIN)__LDFLAGS)
+MTB_RECIPE__LDFLAGS:=$(MTB_RECIPE__LDFLAGS_POSTBUILD)
+MTB_RECIPE__LDFLAGS+=$(MTB_RECIPE__EXTRA_SYMBOLS_ARG)"$(MTB_RECIPE__PATCH_SYMBOLS)"
+MTB_RECIPE__LDFLAGS+=$(MTB_RECIPE__LSFLAGS)$(MTB_RECIPE__GENERATED_LINKER_SCRIPT)
+
+#
+# Compiler flags construction
 #
 MTB_RECIPE__CFLAGS?=\
 	$(CY_CORE_CFLAGS)\
@@ -47,12 +83,7 @@ MTB_RECIPE__ASFLAGS?=\
 	$(CY_CORE_SFLAGS)\
 	$(MTB_TOOLCHAIN_ASFLAGS)
 
-# use public symbols from patch.sym generated in mtb-pdl-cat5
-ifeq ($(NO_OBFS),)
-CY_CORE_PATCH_SYMBOLS=$(CY_CORE_PATCH:.elf=.sym)
-else
-CY_CORE_PATCH_SYMBOLS=$(CY_CORE_PATCH)
-endif
+MTB_RECIPE_ARFLAGS?=$(MTB_TOOLCHAIN_ARFLAGS)
 
 # get resource usage information for build
 -include $(dir $(CY_CORE_PATCH))/firmware_resource_usage.inc
@@ -61,22 +92,6 @@ CY_CORE_DEFINES+=-DCY_PATCH_ENTRIES_BASE=$(CY_PATCH_ENTRIES_BASE)
 ifneq (,$(MTB_RECIPE__CORE_NAME))
 CY_CORE_DEFINES+=-DCORE_NAME_$(MTB_RECIPE__CORE_NAME)=1
 endif
-
-MTB_RECIPE__LDFLAGS:=\
-	$(LDFLAGS)\
-	$(MTB_TOOLCHAIN_LDFLAGS)\
-	$(CY_CORE_LDFLAGS)\
-	-Wl,--entry=$(CY_CORE_APP_ENTRY)\
-	-Wl,--just-symbols="$(CY_CORE_PATCH_SYMBOLS)"\
-	-T$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).ld
-
-# For BWC, be careful of _ vs __
-ifneq ($(MTB_RECIPE_LDFLAGS),)
-MTB_RECIPE__LDFLAGS:=$(MTB_RECIPE_LDFLAGS)
-endif
-
-
-MTB_RECIPE_ARFLAGS?=$(MTB_TOOLCHAIN_ARFLAGS)
 
 # Note: _MTB_RECIPE__DEFAULT_COMPONENT is needed as DISABLE_COMPONENTS cannot be empty
 _MTB_RECIPE__COMPONENT_LIST=$(filter-out $(DISABLE_COMPONENTS) _MTB_RECIPE__DEFAULT_COMPONENT,$(MTB_CORE__FULL_COMPONENT_LIST))
@@ -112,7 +127,7 @@ endif
 ifndef APP_VERSION_MINOR
 APP_VERSION_MINOR = 0
 endif
-APP_VERSION = $(shell env printf "0x%02X%02X%04X" $(APP_VERSION_MINOR) $(APP_VERSION_MAJOR) $(APP_VERSION_APP_ID))
+APP_VERSION:=$(shell env printf "0x%02X%02X%04X" $(APP_VERSION_MINOR) $(APP_VERSION_MAJOR) $(APP_VERSION_APP_ID))
 
 #
 # Includes construction
@@ -148,7 +163,7 @@ MTB_RECIPE__SOURCE=$(MTB_CORE__SEARCH_APP_SOURCE)
 # Libraries construction
 #
 MTB_RECIPE__LIBS=$(LDLIBS) $(MTB_CORE__SEARCH_APP_LIBS)
-
+CY_RECIPE_EXTRA_LIBS:=$(MTB_RECIPE__EXTRA_LIBS)
 
 #
 # Prebuild step
@@ -160,14 +175,16 @@ CY_RECIPE_PREBUILD?=\
 	--shell="$(CY_MODUS_SHELL_DIR_BWC)"\
 	--scripts="$(MTB_TOOLS__RECIPE_DIR)/make/scripts"\
 	--defs="$(CY_CORE_LD_DEFS)"\
-	--patch="$(CY_CORE_PATCH_SYMBOLS)"\
-	--ld="$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).ld"\
+	--patch="$(MTB_RECIPE__PATCH_SYMBOLS)"\
+	--ld=$(MTB_RECIPE__GENERATED_LINKER_SCRIPT)\
 	$(if $(findstring 1,$(DIRECT_LOAD)),--direct)\
 	$(if $(VERBOSE),"--verbose")\
 	&& MTB__SILENT_OUTPUT=
 endif
 
-bsp_gen_ld_prebuild: bsp_prebuild
+bsp_gen_ld_prep_prebuild: bsp_prebuild
+
+bsp_gen_ld_prebuild: bsp_gen_ld_prep_prebuild
 	$(CY_RECIPE_PREBUILD)
 
 project_prebuild: bsp_gen_ld_prebuild
@@ -175,40 +192,46 @@ project_prebuild: bsp_gen_ld_prebuild
 #
 # Postbuild step
 #
+# Note that --cross and --toolchain are both needed.
+# Some gcc tools are used for build steps for both GCC_ARM and ARM toolchain.
+#
 ifeq ($(LIBNAME),)
-
 _MTB_RECIPE__POSTBUILD:=\
-	bash --norc --noprofile\
-	"$(MTB_TOOLS__RECIPE_DIR)/make/scripts/bt_post_build.bash"\
-	--shell="$(CY_MODUS_SHELL_DIR_BWC)"\
-	--cross="$(CY_CROSSPATH)/bin/arm-none-eabi-"\
-	--scripts="$(MTB_TOOLS__RECIPE_DIR)/make/scripts"\
-	--builddir="$(MTB_TOOLS__OUTPUT_CONFIG_DIR)"\
-	--elfname="$(APPNAME).elf"\
-	--appname="$(APPNAME)"\
-	--appver="$(APP_VERSION)"\
-	--hdf="$(CY_CORE_HDF)"\
-	--entry="$(CY_CORE_APP_ENTRY)"\
-	--cgslist="$(CY_CORE_CGSLIST)"\
-	--cgsargs="$(CY_CORE_CGS_ARGS)"\
-	--btp="$(CY_CORE_BTP)"\
-	--id="$(CY_CORE_HCI_ID)"\
-	--overridebaudfile="$(MTB_TOOLS__RECIPE_DIR)/platforms/BAUDRATEFILE.txt"\
-	--chip="$(CHIP)$(CHIP_REV)"\
-	--target="$(TARGET)"\
-	--minidriver="$(CY_CORE_MINIDRIVER)"\
-	--ds2_app="$(CY_DS2_APP_HEX)"\
-	--failsafe="$(CY_CORE_FAIL_SAFE_CGS)"\
-	--clflags="$(CY_CORE_APP_CHIPLOAD_FLAGS)"\
-	--extras=$(CY_APP_OTA)$(APP_STATIC_DATA)$(CY_CORE_APP_XIP_EXTRA)$(CY_CORE_DS2_EXTRA)$(CY_CORE_DIRECT_LOAD)_$(LIFE_CYCLE_STATE)_\
-	--extrahex=$(CY_CORE_PATCH_CERT)\
-	--patch="$(CY_CORE_PATCH_SYMBOLS)"\
-	--ldargs="$(CY_CORE_LDFLAGS)\
-			  $(MTB_TOOLCHAIN_GCC_ARM__OBJRSPFILE)$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/objlist.rsp\
-			  $(MTB_RECIPE__STARTGROUP) $(CY_RECIPE_EXTRA_LIBS) $(MTB_RECIPE__LIBS) $(MTB_RECIPE__ENDGROUP)"\
-	--subdsargs="$(CY_CORE_SUBDS_ARGS)"\
-	--verbose=$(if $(VERBOSE),$(VERBOSE),0)\
-	&& MTB__SILENT_OUTPUT=
+    bash --norc --noprofile\
+    $(if $(_MTB_RECIPE__XIP_FLASH),\
+      "$(MTB_TOOLS__RECIPE_DIR)/make/scripts/bt_post_build_xip.bash",\
+      "$(MTB_TOOLS__RECIPE_DIR)/make/scripts/bt_post_build.bash")\
+    --shell="$(CY_MODUS_SHELL_DIR_BWC)"\
+    --scripts="$(MTB_TOOLS__RECIPE_DIR)/make/scripts"\
+    --builddir="$(MTB_TOOLS__OUTPUT_CONFIG_DIR)"\
+    --elfname="$(APPNAME).elf"\
+    --appname="$(APPNAME)"\
+    --cross="$(MTB_TOOLCHAIN_GCC_ARM__BASE_DIR)/bin/arm-none-eabi-"\
+    --toolchain="$(TOOLCHAIN)"\
+    --appver="$(APP_VERSION)"\
+    --hdf="$(CY_CORE_HDF)"\
+    --entry="$(CY_CORE_APP_ENTRY)"\
+    --cgslist="$(CY_CORE_CGSLIST)"\
+    --cgsargs="$(CY_CORE_CGS_ARGS)"\
+    --btp="$(CY_CORE_BTP)"\
+    --id="$(CY_CORE_HCI_ID)"\
+    --overridebaudfile="$(MTB_TOOLS__RECIPE_DIR)/platforms/BAUDRATEFILE.txt"\
+    --chip="$(CHIP_NAME)"\
+    --target="$(TARGET)"\
+    --minidriver="$(CY_CORE_MINIDRIVER)"\
+    --clflags="$(CY_CORE_APP_CHIPLOAD_FLAGS)"\
+    --extras=$(CY_CORE_APP_XIP_EXTRA)$(CY_CORE_APP_FLASHPATCH_EXTRA)$(CY_CORE_DIRECT_LOAD)_$(LIFE_CYCLE_STATE)_\
+    --extrahex=$(CY_CORE_PATCH_CERT)\
+    --patch="$(MTB_RECIPE__PATCH_SYMBOLS)"\
+    --ldargs="$(MTB_RECIPE__LDFLAGS_POSTBUILD)\
+        $(MTB_RECIPE__OBJRSPFILE)$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/objlist.rsp\
+        $(MTB_RECIPE__STARTGROUP) $(CY_RECIPE_EXTRA_LIBS) $(MTB_RECIPE__LIBS) $(MTB_RECIPE__ENDGROUP)"\
+    --subdsargs="$(CY_CORE_SUBDS_ARGS)"\
+    $(if $(_MTB_RECIPE__XIP_FLASH),--subds_start=$(CY_CORE_DS_LOCATION))\
+    --ld_defs="$(CY_CORE_LD_DEFS)"\
+    --verbose=$(if $(VERBOSE),$(VERBOSE),0)\
+    && MTB__SILENT_OUTPUT=
+
 endif
 
 $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).hex: $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).elf
@@ -219,25 +242,41 @@ $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).hcd: $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/
 
 recipe_postbuild: $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).hex
 
-#
-# add vscode informational message
-#
-ifeq ($(LIBNAME),)
-ifeq ($(CY_SECONDSTAGE),)
-vscode: vscode_bt_information
-endif
-endif
 
-vscode_bt_information:
-	@echo;\
-	echo "VSCode for $(TARGET) hardware debugging:";\
-	echo; \
-	echo " - Edit makefile (or override with command line) to build for hardware debug";\
-	echo "   by setting ENABLE_DEBUG=1.";\
-	echo " - Rebuild application, program, attach debugger.";\
-	echo " - Launch debugger with Run->Start debugging, or F5.";\
-	echo "See document \"WICED Hardware Debugging for Bluetooth Kits\" for details.";\
-	echo;
+################################################################################
+# cat5-specific help
+################################################################################
+make-recipe-cat5-help:
+	$(info )
+	$(info ==============================================================================)
+	$(info $(MTB__SPACE)CAT5 build help)
+	$(info ==============================================================================)
+	$(info $(MTB__SPACE)CAT5 build makefile variables:)
+	$(info $(MTB__SPACE) Storage and load defaults set by bsp.mk, but currently XIP=$(XIP) and DIRECT_LOAD=$(DIRECT_LOAD))
+	$(info $(MTB__SPACE)   DIRECT_LOAD is for targets without FLASH, building so code and data are loaded directly to the execution locations.)
+	$(info $(MTB__SPACE)   If DIRECT_LOAD=0, then XIP is defined XIP?=1)
+	$(info $(MTB__SPACE)   XIP=1 specifies "execute in place" for code or read-only data, except when in sections named .cy_ramfunc.)
+	$(info $(MTB__SPACE)   Code or data will be located in .cy_ramfunc section when declared in source with CY_RAMFUNC_BEGIN)
+	$(info $(MTB__SPACE)   XIP=0 specifies code or read-only data to be loaded from FLASH to RAM, except when in sections named .cy_xip.)
+	$(info $(MTB__SPACE) CAT5 uses generated linker scripts, so some parameters are supported:)
+	$(info $(MTB__SPACE)   Section matches to add for XIP: LINKER_SCRIPT_ADD_XIP?=$(LINKER_SCRIPT_ADD_XIP))
+	$(info $(MTB__SPACE)   Section matches to add for RAM code: LINKER_SCRIPT_ADD_RAM_CODE?=$(LINKER_SCRIPT_ADD_RAM_CODE))
+	$(info $(MTB__SPACE)   Section matches to add for RAM data: LINKER_SCRIPT_ADD_RAM_DATA?=$(LINKER_SCRIPT_ADD_RAM_DATA))
+	$(info $(MTB__SPACE)   Example: LINKER_SCRIPT_ADD_XIP=*\(test1.o\))
+	$(info $(MTB__SPACE) RAM reserved for heap: HEAP_SIZE?=$(HEAP_SIZE))
+	$(info $(MTB__SPACE) UART, skip auto detect and force port, UART?=$(UART))
+	$(info $(MTB__SPACE)   UART=auto or undefined, scan ports to auto detect.)
+	$(info $(MTB__SPACE)   UART=<port name>, skip auto detection and attempt to download to named port, ex. COM22, /dev/ttyS1.)
+	$(info $(MTB__SPACE) Bluetooth MAC address: BT_DEVICE_ADDRESS?=$(BT_DEVICE_ADDRESS))
+	$(info $(MTB__SPACE)   BT_DEVICE_ADDRESS=default, the address will be a combination of device name and developer's PC MAC.)
+	$(info $(MTB__SPACE)   BT_DEVICE_ADDRESS=random, the address will be a combination of device name and a random value.)
+	$(info $(MTB__SPACE)   BT_DEVICE_ADDRESS=<12 hex digits>, the address will be set as specified.)
+	$(info $(MTB__SPACE)   The device name combinations are controlled by mtb-pdl-cat5 *.btp file DLConfigBD_ADDRBase setting.)
+	$(info $(MTB__SPACE) Provisioning state LIFE_CYCLE_STATE?=DM)
+	$(info $(MTB__SPACE)   LIFE_CYCLE_STATE=CM to match "CM" provisioned device.)
+
+help: make-recipe-cat5-help
+
 
 ################################################################################
 # Programmer tool

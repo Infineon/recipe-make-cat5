@@ -1,5 +1,5 @@
 #
-# Copyright 2016-2023, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -46,55 +46,79 @@ MTB_RECIPE__LINKER_SCRIPT:=$(lastword $(MAKEFILE_LIST))
 
 # Programming interface description
 ifeq (,$(BSP_PROGRAM_INTERFACE))
-_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR=KitProg3
+_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR:=KitProg3
 else
-_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR=$(BSP_PROGRAM_INTERFACE)
+_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR:=$(BSP_PROGRAM_INTERFACE)
 endif
-ifeq ($(findstring $(_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR),KitProg3 JLink),)
-$(call mtb__error,Unable to proceed. $(_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR) interface is not supported for this device)
+
+# debug interface validation
+debug_interface_check:
+ifeq ($(filter $(_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR), KitProg3 JLink),)
+	$(error "$(_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR)" interface is not supported for this device. \
+	Supported interfaces are "KitProg3 JLink")
 endif
+
+_MTB_RECIPE__JLINK_DEVICE_CFG:=Cortex-M33
+_MTB_RECIPE__OPENOCD_DEVICE_CFG:=cyw55500.cfg
 
 #
 # List the supported toolchains
 #
-CY_SUPPORTED_TOOLCHAINS=GCC_ARM
+CY_SUPPORTED_TOOLCHAINS=GCC_ARM ARM
 ifeq ($(filter $(TOOLCHAIN),$(CY_SUPPORTED_TOOLCHAINS)),)
 $(error must use supported TOOLCHAIN such as: $(CY_SUPPORTED_TOOLCHAINS))
 endif
 
 ifeq ($(OS),Windows_NT)
 CY_OS_DIR=Windows
+CY_SHELL_STAT_CMD=stat -c %s
 else
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
 CY_OS_DIR=Linux64
+CY_SHELL_STAT_CMD=stat -c %s
 endif
 ifeq ($(UNAME_S),Darwin)
 CY_OS_DIR=OSX
+CY_SHELL_STAT_CMD=stat -f %z
 endif
 endif
 
-CY_COMPILER_DIR_BWC:=$(MTB_TOOLCHAIN_GCC_ARM__BASE_DIR)
+CY_COMPILER_DIR_BWC:=$(MTB_TOOLCHAIN_$(TOOLCHAIN)__BASE_DIR)
 CY_MODUS_SHELL_DIR_BWC:=$(CY_TOOL_modus-shell_BASE_ABS)
 
 ################################################################################
 # Feature processing
 ################################################################################
-#
-# floating point and other device specific compiler flags
-#
+
+# Enable CAT5 and THREADX support for all cat5 devices
+MTB_RECIPE__COMPONENT+=CAT5 THREADX
+
+# clib-support has _sbrk that needs heap section, default 128k
+# also provide C link libraries
+ifneq ($(filter %MW_CLIB_SUPPORT,$(COMPONENTS)),)
+HEAP_SIZE?=0x20000
+endif
 
 # create a RAM download image *.hcd
 DIRECT_LOAD?=1
+ifeq ($(DIRECT_LOAD),0)
+XIP?=1
+endif
+_MTB_RECIPE__XIP_FLASH:=$(if $(XIP),1)
+ifeq ($(DIRECT_LOAD),0)
+_MTB_RECIPE__XIP_FLASH:=1
+endif
+
 ifeq ($(DIRECT_LOAD),1)
-CY_CORE_DIRECT_LOAD=_DIRECT_
+CY_CORE_DIRECT_LOAD=_DIRECT_LOAD_
 CY_CORE_CGS_ARGS+=-O DLConfigSSLocation:$(PLATFORM_DIRECT_LOAD_BASE_ADDR)
 CY_CORE_CGS_ARGS+=-O DLMaxWriteSize:240
 endif
 
 CY_CORE_APP_ENTRY:=spar_crt_setup
 # Bluetooth Device address
-BT_DEVICE_ADDRESS:=default
+BT_DEVICE_ADDRESS?=default
 ifneq ($(BT_DEVICE_ADDRESS),)
 CY_CORE_CGS_ARGS+=-O DLConfigBD_ADDRBase:$(BT_DEVICE_ADDRESS)
 endif
@@ -115,47 +139,84 @@ CY_APP_DEFINES+=-DWICED_HCI_TRANSPORT=2
 endif
 
 # special handling for chip download
+ifneq ($(XIP),)
+CY_CORE_APP_CHIPLOAD_FLAGS+=-DL_TIMEOUT_MULTIPLIER 16
+else
 CY_CORE_APP_CHIPLOAD_FLAGS+=-DL_TIMEOUT_MULTIPLIER 2
+endif
 
+# flash area
+CY_FLASH0_BEGIN_ADDR:=0x600000
+CY_FLASH0_LENGTH:=0x1000000
+
+# room to pad xip and fit app config
+CY_FLASH0_PAD:=0x10000
+
+# use flash offset and length to limit xip range
+ifneq ($(CY_FLASH0_BEGIN_ADDR),)
+CY_CORE_LD_DEFS+=FLASH0_BEGIN_ADDR=$(CY_FLASH0_BEGIN_ADDR)
+endif
+ifneq ($(CY_FLASH0_LENGTH),)
+CY_CORE_LD_DEFS+=FLASH0_LENGTH=$(CY_FLASH0_LENGTH)
+endif
 # use btp file to determine flash layout
 CY_CORE_LD_DEFS+=BTP=$(CY_CORE_BTP)
+
+# XIP or flash patch
+ifneq ($(_MTB_RECIPE__XIP_FLASH),)
+CY_CORE_APP_SPECIFIC_DS_LEN?=0x1C
+ifneq ($(XIP),1)
+CY_CORE_LD_DEFS+=XIP_DS_OFFSET_FLASH_PATCH=$(CY_CORE_APP_SPECIFIC_DS_LEN)
+CY_CORE_APP_FLASHPATCH_EXTRA=_FLASHPATCH_
+$(info APP loads to RAM from FLASH except .cy_xip sections)
+else
+CY_CORE_LD_DEFS+=XIP_DS_OFFSET_FLASH_APP=$(CY_CORE_APP_SPECIFIC_DS_LEN)
+CY_CORE_APP_XIP_EXTRA=_XIP_FLASHAPP_
+$(info APP keeps code/rodata in XIP except .cy_ramfunc sections)
+endif
+CY_CORE_PATCH_FW_LEN:=$(shell $(CY_SHELL_STAT_CMD) $(CY_CORE_PATCH_FW))
+CY_CORE_PATCH_SEC_LEN:=$(shell $(CY_SHELL_STAT_CMD) $(CY_CORE_PATCH_SEC))
+CY_CORE_DS_LOCATION:=$(shell printf "0x%08X" $$(($(CY_CORE_PATCH_FW_LEN) + $(CY_CORE_PATCH_SEC_LEN) + 0x680048)))
+CY_CORE_LD_DEFS+=DS_LOCATION=$(CY_CORE_DS_LOCATION)
+CY_CORE_XIP_LEN_LD_DEFS:=XIP_LEN=$(shell printf "0x%08X" $$(($(CY_FLASH0_LENGTH) - ($(CY_CORE_DS_LOCATION) - $(CY_FLASH0_BEGIN_ADDR) + $(CY_FLASH0_PAD)))))
+CY_CORE_LD_DEFS+=$(CY_CORE_XIP_LEN_LD_DEFS)
+endif
+
+# define heap
+ifneq ($(HEAP_SIZE),)
+CY_CORE_LD_DEFS+=HEAP_SIZE=$(HEAP_SIZE)
+endif
+
+#
+# add to default linker script input section matches
+#
+LINKER_SCRIPT_ADD_XIP?=
+LINKER_SCRIPT_ADD_RAM_CODE?=
+LINKER_SCRIPT_ADD_RAM_DATA?=
+
+# build into comma delimited lists for the command line
+CY_CORE_LD_DEFS+=$(if $(LINKER_SCRIPT_ADD_XIP),ADD_XIP=$(subst $(MTB__SPACE),$(MTB__COMMA),$(LINKER_SCRIPT_ADD_XIP)))
+CY_CORE_LD_DEFS+=$(if $(LINKER_SCRIPT_ADD_RAM_CODE),ADD_RAM_CODE=$(subst $(MTB__SPACE),$(MTB__COMMA),$(LINKER_SCRIPT_ADD_RAM_CODE)))
+CY_CORE_LD_DEFS+=$(if $(LINKER_SCRIPT_ADD_RAM_DATA),ADD_RAM_DATA=$(subst $(MTB__SPACE),$(MTB__COMMA),$(LINKER_SCRIPT_ADD_RAM_DATA)))
+
 
 #
 # Core flags and defines
 #
-CY_CORE_CFLAGS+=\
-$(CY_CORE_COMMON_OPTIONS)\
-	-ffreestanding\
-	-fshort-wchar\
-	-funsigned-char\
-	-ffunction-sections\
-	-fdata-sections\
-	-Wno-unused-variable\
-	-Wno-unused-function\
-
-CY_CORE_SFLAGS=
-
-CY_CORE_LDFLAGS=\
-	-nostartfiles\
-	-nodefaultlibs\
-	-nostdlib\
-	$(CY_CORE_EXTRA_LD_FLAGS)
+CHIP_NUM:=$(shell a=$(CHIP_NAME);echo $${a:0:5})
 
 CY_CORE_DEFINES+=\
-	-DCYW$(CHIP)$(CHIP_REV)=1 \
-	-DBCM$(CHIP)$(CHIP_REV)=1 \
-	-DBCM$(CHIP)=1 \
-	-DCYW$(CHIP)=1 \
-	-DCHIP=$(CHIP) \
-	-DAPP_CHIP=$(CHIP) \
-	-DOTA_CHIP=$(CHIP) \
-	-DCHIP_REV_$(BLD)_$(CHIP)$(CHIP_REV)=1 \
-	-DCOMPILER_ARM \
+	-DCYW$(CHIP_NAME)=1 \
+	-DCYW$(CHIP_NUM)=1 \
+	-DCHIP=$(CHIP_NUM) \
+	-DAPP_CHIP=$(CHIP_NUM) \
+	-DOTA_CHIP=$(CHIP_NUM) \
+	-DCHIP_REV_$(BLD)_$(CHIP_NAME)=1 \
 	-DSPAR_APP_SETUP=application_setup \
 	-DPLATFORM='"$(subst -,_,$(TARGET))"' \
 	-D$(subst -,_,$(TARGET))
 
-ifeq ($(CHIP),55572)
+ifeq ($(findstring 55572,$(CHIP_NAME)),55572)
 CY_CORE_DEFINES+=-DBTSTACK_VER=0x03000001
 endif
 

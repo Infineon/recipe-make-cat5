@@ -1,7 +1,5 @@
 # CYW55513 GNU make Build System
 
-## This version of the recipe-make-cat5 library is a Beta release to support CYW55513 devices only. Do not use it for production development or in applications targeting other devices.
-
 ## Overview
 
 This repo provides the build recipe make files and scripts for building and programming CYW55513 applications. Builds can be run either through a command-line interface (CLI) or through the Eclipse IDE for ModusToolbox.
@@ -20,4 +18,4 @@ To list the build options, run the "help" target by typing "make help" in CLI. F
 * [Infineon GitHub](https://github.com/Infineon)
 * [ModusToolbox](https://www.infineon.com/cms/en/design-support/tools/sdk/modustoolbox-software)
 ---
-© Cypress Semiconductor Corporation, 2022.
+© Cypress Semiconductor Corporation, 2022-2024.

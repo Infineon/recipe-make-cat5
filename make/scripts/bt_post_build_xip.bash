@@ -188,6 +188,10 @@ do
         CY_APP_SUBDS_ARGS="${i#*=}"
         shift
         ;;
+    --subds_start=*)
+        CY_APP_SUBDS_START="${i#*=}"
+        shift
+        ;;
     --ld_defs=*)
         CY_APP_LD_DEFS="${i#*=}"
         shift
@@ -238,15 +242,16 @@ if [ ${VERBOSE} -ne 0 ]; then
     echo 23: CY_APP_PATCH         : $CY_APP_PATCH
     echo 24: CY_APP_LD_ARGS       : $CY_APP_LD_ARGS
     echo 25: CY_APP_SUBDS_ARGS    : $CY_APP_SUBDS_ARGS
-    echo 26: CY_APP_LD_DEFS       : $CY_APP_LD_DEFS
-    echo 27: CY_TOOL_cgs_EXE_ABS   : $CY_TOOL_cgs_EXE_ABS
-    echo 28: CY_TOOL_det_and_id_EXE_ABS : $CY_TOOL_det_and_id_EXE_ABS
-    echo 29: CY_TOOL_append_to_intel_hex_EXE_ABS : $CY_TOOL_append_to_intel_hex_EXE_ABS
-    echo 30: CY_TOOL_head_or_tail_EXE_ABS : $CY_TOOL_head_or_tail_EXE_ABS
-    echo 31: CY_TOOL_intel_hex_merge_EXE_ABS : $CY_TOOL_intel_hex_merge_EXE_ABS
-    echo 32: CY_TOOL_intel_hex_to_bin_EXE_ABS : $CY_TOOL_intel_hex_to_bin_EXE_ABS
-    echo 33: CY_TOOL_intel_hex_to_hcd_EXE_ABS : $CY_TOOL_intel_hex_to_hcd_EXE_ABS
-    echo 34: CY_TOOL_shift_intel_hex_EXE_ABS : $CY_TOOL_shift_intel_hex_EXE_ABS
+    echo 26: CY_APP_SUBDS_START   : $CY_APP_SUBDS_START
+    echo 27: CY_APP_LD_DEFS       : $CY_APP_LD_DEFS
+    echo 28: CY_TOOL_cgs_EXE_ABS   : $CY_TOOL_cgs_EXE_ABS
+    echo 29: CY_TOOL_det_and_id_EXE_ABS : $CY_TOOL_det_and_id_EXE_ABS
+    echo 30: CY_TOOL_append_to_intel_hex_EXE_ABS : $CY_TOOL_append_to_intel_hex_EXE_ABS
+    echo 31: CY_TOOL_head_or_tail_EXE_ABS : $CY_TOOL_head_or_tail_EXE_ABS
+    echo 32: CY_TOOL_intel_hex_merge_EXE_ABS : $CY_TOOL_intel_hex_merge_EXE_ABS
+    echo 33: CY_TOOL_intel_hex_to_bin_EXE_ABS : $CY_TOOL_intel_hex_to_bin_EXE_ABS
+    echo 34: CY_TOOL_intel_hex_to_hcd_EXE_ABS : $CY_TOOL_intel_hex_to_hcd_EXE_ABS
+    echo 35: CY_TOOL_shift_intel_hex_EXE_ABS : $CY_TOOL_shift_intel_hex_EXE_ABS
 fi
 
 # check that required files are present
@@ -258,6 +263,7 @@ fi
 CY_APP_HEX="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}_download.hex"
 CY_APP_HEX_STATIC="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}_static.hex"
 CY_APP_HEX_SS="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}_ss.hex"
+CY_APP_HEX_CERT="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}_cert.hex"
 CY_APP_HCD="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}_download.hcd"
 if [[ $TOOLCHAIN = "ARM" ]]; then
     CY_APP_LD="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}_postbuild.sct"
@@ -321,16 +327,7 @@ CY_APP_DIRECT_LOAD="DIRECT_LOAD=1"
 fi
 # generate the linker script
 if [[ $TOOLCHAIN = "ARM" ]]; then
-    #  calculate the room needed to fit app below MPAF sections
-    if [[ $CY_APP_BUILD_EXTRAS = *"_DIRECT_LOAD_"* ]]; then
-        # when whole app is loaded to RAM, add the RO and RW totals
-        APP_IRAM_LENGTH_RW=$("${CY_TOOL_PERL}" -ne 'printf("0x%X", $1) if /Total RW\s+Size .* (\d+) /' "${CY_APP_MAP}")
-        APP_IRAM_LENGTH_RO=$("${CY_TOOL_PERL}" -ne 'printf("0x%X", $1) if /Total RO\s+Size .* (\d+) /' "${CY_APP_MAP}")
-        APP_IRAM_LENGTH=$(printf "0x%x"  $((${APP_IRAM_LENGTH_RW} + ${APP_IRAM_LENGTH_RO})))
-    else
-        # when using flash for RO, just get the app total RW (ram)
-        APP_IRAM_LENGTH=$("${CY_TOOL_PERL}" -ne 'printf("0x%X", $1) if /Total RW\s+Size .* (\d+) /' "${CY_APP_MAP}")
-    fi
+    APP_IRAM_LENGTH=$("${CY_TOOL_PERL}" -ne 'printf("0x%X", $1) if /Total RW\s+Size .* (\d+) /' "${CY_APP_MAP}")
 else
     APP_IRAM_LENGTH=$("${CY_TOOL_PERL}" -ne 'print "$1" if /(0x[0-9a-f]+)\s+app_iram_length/' "${CY_APP_MAP}")
 fi
@@ -384,6 +381,12 @@ else
 fi
 
 #create app cgs file
+if [[ $CY_APP_BUILD_EXTRAS = *"_FLASHPATCH_"* ]]; then
+CY_APP_FLASH_PATCH=FLASH_PATCH
+fi
+if [[ $CY_APP_BUILD_EXTRAS = *"_FLASHAPP_"* ]]; then
+CY_APP_FLASH_PATCH=FLASH_PATCH
+fi
 CREATE_CGS_COMMAND="\
     ${CY_TOOL_PERL} -I ${CYWICEDSCRIPTS} ${CYWICEDSCRIPTS}/wiced-gen-cgs.pl\
     ${CY_MAINAPP_BUILD_DIR}/${CY_ELF_NAME}\
@@ -392,6 +395,8 @@ CREATE_CGS_COMMAND="\
     ${CY_APP_HDF}\
     "${CY_APP_LD}"\
     ${CY_APP_BTP}\
+    DS_LOCATION=$CY_APP_SUBDS_START\
+    ${CY_APP_FLASH_PATCH}\
     out=${CY_MAINAPP_BUILD_DIR}/${CY_MAINAPP_NAME}.cgs > ${CY_MAINAPP_BUILD_DIR}/${CY_MAINAPP_NAME}.report.txt"
 if [ ${VERBOSE} -ne 0 ]; then
     echo Calling ${CREATE_CGS_COMMAND}
@@ -460,6 +465,8 @@ set -e
 
 echo "Creating SubDS config records"
 CY_DS_SUB_CGS="${CY_MAINAPP_BUILD_DIR}/${CY_MAINAPP_NAME}_ds_sub.cgs"
+CY_DS_SUB_MDH=${CY_DS_SUB_CGS//.cgs/_mdh.bin}
+CY_DS_SUB_MDH_HEX=${CY_DS_SUB_CGS//.cgs/_mdh.hex}
 CY_DS_SUB_TBL=${CY_DS_SUB_CGS//.cgs/.tbl}
 CREATE_SUBDS_COMMAND="\
     ${CY_TOOL_PERL} -I ${CYWICEDSCRIPTS} ${CYWICEDSCRIPTS}/wiced-create-subds.pl\
@@ -469,6 +476,7 @@ CREATE_SUBDS_COMMAND="\
     --subBin=${CY_DS_SUB_CGS//.cgs/.bin}\
     --encBin=${CY_DS_SUB_CGS//.cgs/.enc}\
     --tbl=${CY_DS_SUB_TBL}\
+    --mdhBin=${CY_DS_SUB_MDH}\
     --appbin=${CY_APP_DS_BIN}\
     --ssbin=${CY_APP_SS_BIN}\
     --crt_dir=${CY_MAINAPP_BUILD_DIR}\
@@ -494,27 +502,38 @@ if [[ ! -e ${CY_APP_HEX} ]]; then
     exit 1
 fi
 
-if [[ ${CY_APP_MERGE_HEX_NAME} = *"hex"* ]]; then
-    echo "Merging the extra hex ${CY_APP_MERGE_HEX_NAME}"
-    MERGE_CERT_COMMAND="${CY_TOOL_intel_hex_merge_EXE_ABS} ${CY_APP_MERGE_HEX_NAME} ${CY_APP_HEX} ${CY_APP_HEX}"
-    if [ ${VERBOSE} -ne 0 ]; then
-        echo Calling ${MERGE_CERT_COMMAND}
-    fi
-    set +e
-    eval ${MERGE_CERT_COMMAND}
-    set -e
+GEN_MDH_HEX_COMMAND="${CYCROSSPATH}objcopy -I binary -O ihex ${CY_DS_SUB_MDH} ${CY_DS_SUB_MDH_HEX}"
+if [ ${VERBOSE} -ne 0 ]; then
+    echo Calling ${GEN_MDH_HEX_COMMAND}
+fi
+set +e
+eval ${GEN_MDH_HEX_COMMAND}
+set -e
+
+if [[ ! -e ${CY_DS_SUB_MDH_HEX} ]]; then
+    echo "!! Post build failed to generate ${CY_DS_SUB_MDH_HEX}"
+    exit 1
 fi
 
-# convert DIRECT_LOAD cgs file to hex and merge with SS & DS
-if [[ $CY_APP_BUILD_EXTRAS = *"_DIRECT_LOAD_"* ]]; then
-    CY_DIRECT_LOAD_HEX=${CY_MAINAPP_BUILD_DIR}/${CY_MAINAPP_NAME}_direct_load.hex
-    echo "Merging the DIRECT_LOAD hex ${CY_DIRECT_LOAD_HEX}"
-    MERGE_DIRECT_LOAD_COMMAND="${CY_TOOL_intel_hex_merge_EXE_ABS} ${CY_DIRECT_LOAD_HEX} ${CY_APP_HEX} ${CY_APP_HEX}"
+if [[ ${CY_APP_MERGE_HEX_NAME} = *"hex"* ]]; then
+
+    echo "Generating certificate file"
+    CERT_ALIGN_SHIFT=$("${CY_TOOL_PERL}" ${CYWICEDSCRIPTS}/wiced-process-cert.pl ${CY_DS_SUB_TBL} ${CY_APP_MERGE_HEX_NAME})
+    GEN_CERT_COMMAND="${CY_TOOL_shift_intel_hex_EXE_ABS} ${CERT_ALIGN_SHIFT} ${CY_APP_MERGE_HEX_NAME} ${CY_APP_HEX_CERT}"
     if [ ${VERBOSE} -ne 0 ]; then
-        echo Calling ${MERGE_DIRECT_LOAD_COMMAND}
+        echo Calling ${GEN_CERT_COMMAND}
     fi
     set +e
-    eval ${MERGE_DIRECT_LOAD_COMMAND}
+    eval ${GEN_CERT_COMMAND}
+    set -e
+
+    # Merge all hex files
+    MERGE_HEX_COMMAND="${CY_TOOL_intel_hex_merge_EXE_ABS} ${CY_DS_SUB_MDH_HEX} ${CY_APP_HEX_CERT} ${CY_APP_HEX} ${CY_APP_HEX}"
+    if [ ${VERBOSE} -ne 0 ]; then
+        echo Calling ${MERGE_HEX_COMMAND}
+    fi
+    set +e
+    eval ${MERGE_HEX_COMMAND}
     set -e
 fi
 

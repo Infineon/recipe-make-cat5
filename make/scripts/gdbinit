@@ -4,5 +4,4 @@ target remote:3333
 # Open all memory
 set mem inaccessible-by-default off
 
-# Print registers
-monitor reg
+monitor halt

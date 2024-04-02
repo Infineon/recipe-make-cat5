@@ -6,7 +6,7 @@
 #
 ################################################################################
 # \copyright
-# Copyright 2022-2023 Cypress Semiconductor Corporation
+# Copyright 2022-2024 Cypress Semiconductor Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -47,8 +47,6 @@ endif
 # This must set with = instead of :=
 _MTB_RECIPE__C_FLAGS=$(subst $(MTB__SPACE),\"$(MTB__COMMA)$(MTB__NEWLINE_MARKER)\",$(strip $(MTB_RECIPE__CFLAGS)))
 
-_MTB_RECIPE__JLINK_DEVICE_CFG:=Cortex-M33
-_MTB_RECIPE__OPENOCD_DEVICE_CFG:=cyw55500.cfg
 MTB_RECIPE__IDE_RECIPE_DATA_FILE:=$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/ide_recipe_data.temp
 MTB_RECIPE__IDE_RECIPE_METADATA_FILE:=$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/ide_recipe_metadata.temp
 

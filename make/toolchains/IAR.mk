@@ -7,7 +7,7 @@
 #
 ################################################################################
 # \copyright
-# Copyright 2018-2023 Cypress Semiconductor Corporation
+# Copyright 2018-2024 Cypress Semiconductor Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -181,3 +181,7 @@ MTB_TOOLCHAIN_IAR__INCLUDES:=
 
 # Additional libraries in the link process based on this toolchain
 MTB_TOOLCHAIN_IAR__DEFINES:=$(_MTB_TOOLCHAIN_IAR__DEBUG_FLAG)
+
+# https://github.com/microsoft/vscode-cmake-tools/issues/1096
+# vsocde c/c++ pluggin current does not suppot IAR intellisense mode. Use gcc-arm for now.
+MTB_TOOLCHAIN_IAR__VSCODE_INTELLISENSE_MODE:=gcc-arm

@@ -1,13 +1,12 @@
 ###############################################################################
 # \file ARM.mk
-# \version 1.0
 #
 # \brief
 # ARM Compiler (Clang) toolchain configuration.
 #
 ################################################################################
 # \copyright
-# Copyright 2018-2023 Cypress Semiconductor Corporation
+# Copyright 2018-2024 Cypress Semiconductor Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,6 +25,7 @@
 ifeq ($(WHICHFILE),true)
 $(info Processing $(lastword $(MAKEFILE_LIST)))
 endif
+
 ################################################################################
 # Tools
 ################################################################################
@@ -75,6 +75,9 @@ mtb_toolchain_ARM__elf2bin=$(MTB_TOOLCHAIN_ARM__ELF2BIN) --output $2 --bin $1
 ifeq ($(CONFIG),Debug)
 _MTB_TOOLCHAIN_ARM__DEBUG_FLAG:=-DDEBUG
 _MTB_TOOLCHAIN_ARM__OPTIMIZATION:=-O1
+ifneq (,$(filter -fomit-frame-pointer,$(CFLAGS) $(CXXFLAGS)))
+_MTB_TOOLCHAIN_ARM__OPTIMIZATION+=-fno-omit-frame-pointer
+endif
 else
 ifeq ($(CONFIG),Release)
 _MTB_TOOLCHAIN_ARM__DEBUG_FLAG:=-DNDEBUG
@@ -87,6 +90,14 @@ endif
 
 # Flags common to compile and link
 _MTB_TOOLCHAIN_ARM__COMMON_FLAGS:=--target=arm-arm-none-eabi
+
+# Arm Cortex-M33 CPU without DSP support
+_MTB_TOOLCHAIN_ARM__CFLAGS_CORE:=-mcpu=cortex-m33+nodsp
+_MTB_TOOLCHAIN_ARM__FLAGS_CORE:=--cpu=Cortex-M33.no_dsp
+
+# FPv5 FPU, hardfp, single-precision only
+_MTB_TOOLCHAIN_ARM__VFP_CFLAGS:=-mfloat-abi=hard -mfpu=fpv5-sp-d16
+_MTB_TOOLCHAIN_ARM__VFP_FLAGS:=--fpu=FPv5-SP
 
 # Command line flags for c-files
 MTB_TOOLCHAIN_ARM__CFLAGS:=\
@@ -111,7 +122,10 @@ MTB_TOOLCHAIN_ARM__ASFLAGS:=\
 MTB_TOOLCHAIN_ARM__LDFLAGS=\
 	$(_MTB_TOOLCHAIN_ARM__FLAGS_CORE)\
 	$(_MTB_TOOLCHAIN_ARM__VFP_FLAGS)\
-	--info=totals\
+	--diag_suppress=L6305,L6314,L6329,L3912\
+	--info=sizes,totals\
+	--no_startup\
+	--legacyalign\
 	--stdlib=libc++
 
 # Command line flags for archiving
@@ -133,15 +147,21 @@ MTB_TOOLCHAIN_ARM__SUFFIX_LS :=sct
 MTB_TOOLCHAIN_ARM__SUFFIX_MAP:=map
 MTB_TOOLCHAIN_ARM__SUFFIX_TARGET:=elf
 MTB_TOOLCHAIN_ARM__SUFFIX_PROGRAM:=hex
+MTB_TOOLCHAIN_ARM__SUFFIX_SYMBOLS:=symdefs
 
 # Toolchain specific flags
 MTB_TOOLCHAIN_ARM__OUTPUT_OPTION:=-o
 MTB_TOOLCHAIN_ARM__ARCHIVE_LIB_OUTPUT_OPTION:=
 MTB_TOOLCHAIN_ARM__MAPFILE:=--map --list 
-MTB_TOOLCHAIN_ARM__LSFLAGS:=--scatter 
+MTB_TOOLCHAIN_ARM__LSFLAGS:=--scatter=
 MTB_TOOLCHAIN_ARM__INCRSPFILE:=@
 MTB_TOOLCHAIN_ARM__INCRSPFILE_ASM:=--via 
 MTB_TOOLCHAIN_ARM__OBJRSPFILE:=--via 
+MTB_TOOLCHAIN_ARM__ENTRY_ARG:=--entry=
+MTB_TOOLCHAIN_ARM__SYMBOLS_ARG:=
+MTB_TOOLCHAIN_ARM__LIBPATH_ARG:=--libpath=
+MTB_TOOLCHAIN_ARM__C_LIBRARY_ARG:=--library=
+
 
 # Produce a makefile dependency rule for each input file
 MTB_TOOLCHAIN_ARM__DEPENDENCIES=-MMD -MP -MF "$(@:.$(MTB_TOOLCHAIN_ARM__SUFFIX_O)=.$(MTB_TOOLCHAIN_ARM__SUFFIX_D))" -MT "$@"
@@ -152,3 +172,5 @@ MTB_TOOLCHAIN_ARM__INCLUDES:=
 
 # Additional libraries in the link process based on this toolchain
 MTB_TOOLCHAIN_ARM__DEFINES:=$(_MTB_TOOLCHAIN_ARM__DEBUG_FLAG)
+
+MTB_TOOLCHAIN_ARM__VSCODE_INTELLISENSE_MODE:=clang-arm

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright 2016-2023, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -131,7 +131,7 @@ CY_TOOL_PERL=$CYMODUSSHELL/bin/perl
 fi
 
 #create ld file
-GEN_LD_COMMAND='"$CY_TOOL_PERL" -I "$CYWICEDSCRIPTS" "$CYWICEDSCRIPTS/wiced-gen-ld.pl" $CY_APP_LD_DEFS DIRECT_LOAD=$CY_APP_DIRECT_LOAD "$CY_APP_PATCH" "$CY_APP_OVERLAY" LAYOUT=code_from_top out="$CY_APP_LD"'
+GEN_LD_COMMAND='"$CY_TOOL_PERL" -I "$CYWICEDSCRIPTS" "$CYWICEDSCRIPTS/wiced-gen-linker-script.pl" $CY_APP_LD_DEFS DIRECT_LOAD=$CY_APP_DIRECT_LOAD "$CY_APP_PATCH" "$CY_APP_OVERLAY" LAYOUT=code_from_top out="$CY_APP_LD"'
 if [ "$VERBOSE" != "" ]; then
     eval "echo calling ${GEN_LD_COMMAND}"
 fi

@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# Copyright 2016-2023, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -155,18 +155,26 @@ if ( $device_found == 0 )
 }
 else
 {
+    # get ChipLoad error response
+    my $chipload_help = qx{"$chip_load" -HELP 2>&1};
+    my $enterdownloadmode_param = "";
+    if($chipload_help =~ /\bENTERDOWNLOADMODE\b/) {
+        # if chipload supports ENTERDOWNLOADMODE, it will include it in help text
+        $enterdownloadmode_param = "-ENTERDOWNLOADMODE";
+    }
+
     print "\nFound serial port : $com_port\n\nDownloading FW ...\n";
     my $download_log_path = $build_loc . "/download.log";
 
 
     #Download FW
     if($direct_load == 1) {
-        # print "$chip_load -BLUETOOLMODE -PORT $com_port -BAUDRATE $detected_baud -BTP $btp_file -NOERASE -CONFIG $config_file ${addl_flags}\n";
-        qx{"$chip_load" -BLUETOOLMODE -PORT $com_port -BAUDRATE $detected_baud -BTP "${btp_file}" -NOERASE -CONFIG ${config_file} -LOGTO "$download_log_path" ${addl_flags}};
+        print "$chip_load -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -BAUDRATE $detected_baud -BTP $btp_file -NOERASE -CONFIG $config_file ${addl_flags}\n";
+        qx{"$chip_load" -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -BAUDRATE $detected_baud -BTP "${btp_file}" -NOERASE -CONFIG ${config_file} -LOGTO "$download_log_path" ${addl_flags}};
     }
     else {
-        #print "$chip_load -BLUETOOLMODE -PORT $com_port -LAUNCHADDRESS 0x00000000 -BAUDRATE $detected_baud -NOVERIFY -BTP ${btp_file} -CONFIG $config_file ${addl_flags}\n";
-        qx{"$chip_load" -BLUETOOLMODE -PORT $com_port -LAUNCHADDRESS 0x00000000 -BAUDRATE $detected_baud -NOVERIFY -BTP "${btp_file}" -CONFIG ${config_file} -LOGTO "$download_log_path" ${addl_flags}};
+        print "$chip_load -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -LAUNCHADDRESS 0x00000000 -BAUDRATE $detected_baud -NOVERIFY -MINIDRIVER ${mini_driver} -BTP ${btp_file} -CONFIG $config_file ${addl_flags}\n";
+        qx{"$chip_load" -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -LAUNCHADDRESS 0x00000000 -BAUDRATE $detected_baud -NOVERIFY -MINIDRIVER "${mini_driver}" -BTP "${btp_file}" -CONFIG ${config_file} -LOGTO "$download_log_path" ${addl_flags}};
     }
-	exit ($? >> 8);
+    exit ($? >> 8);
 }

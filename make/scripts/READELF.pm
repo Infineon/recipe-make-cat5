@@ -1,6 +1,6 @@
 #!/bin/perl
 #
-# Copyright 2016-2023, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -123,8 +123,8 @@ sub read_opened_elf
 			printf "section $index offset 0x%x, %s\n", $section->{sh_offset}, $section_stringtable->{$section->{sh_name}};
 			next;
 		}
-		if($section->{sh_size} > 0x100000) {
-			printf "section $index size 0x%x, %s\n", $section->{sh_s}, $section_stringtable->{$section->{sh_name}};
+		if($section->{sh_size} > 0x1000000) {
+			printf "section $index size 0x%x, %s\n", $section->{sh_size}, $section_stringtable->{$section->{sh_name}};
 			next;
 		}
 		seek $ELFFILE, $section->{sh_offset}, 0;

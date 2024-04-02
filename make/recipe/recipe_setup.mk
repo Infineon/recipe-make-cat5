@@ -6,7 +6,7 @@
 #
 ################################################################################
 # \copyright
-# Copyright 2018-2023 Cypress Semiconductor Corporation
+# Copyright 2018-2024 Cypress Semiconductor Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -153,3 +153,5 @@ MTB_RECIPE__EXPLICIT_DEPENDENCIES=$(MTB_TOOLCHAIN_$(TOOLCHAIN)__EXPLICIT_DEPENDE
 
 MTB_RECIPE__TOOLCHAIN_INCLUDES:=$(MTB_TOOLCHAIN_$(TOOLCHAIN)__INCLUDES)
 MTB_RECIPE__TOOLCHAIN_DEFINES:=$(MTB_TOOLCHAIN_$(TOOLCHAIN)__DEFINES)
+
+MTB_RECIPE__TOOLCHAIN_VSCODE_INTELLISENSE_MODE:=$(MTB_TOOLCHAIN_$(TOOLCHAIN)__VSCODE_INTELLISENSE_MODE)

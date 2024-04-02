@@ -1,5 +1,5 @@
 #
-# Copyright 2016-2022, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -60,25 +60,23 @@ endif
 # openocd gdb server command line launch
 #
 _MTB_RECIPE__OPENOCD_TARGET=source [find target/cyw55500.cfg];
-_MTB_RECIPE__OPENOCD_DEBUG=init
+_MTB_RECIPE__OPENOCD_DEBUG=proc before_examine_proc { } {cyw55500.dap apreg 0x10000 0xD04 0xe000edf0; cyw55500.dap apreg 0x10000 0xD0C 0xa05f0003; sleep 100};cyw55500.cpu.cm33 configure -event examine-start before_examine_proc;init
 _MTB_RECIPE__OPENOCD_GDB_SERVER_ARGS=source [find interface/kitprog3.cfg]; $(_MTB_RECIPE__OPENOCD_TARGET) $(_MTB_RECIPE__OPENOCD_DEBUG)
 
 #
 # jlink gdb server command line launch
 #
-_MTB_RECIPE__JLINK_GDB_SERVER_ARGS=-USB -device $(_MTB_RECIPE__JLINK_DEVICE_CFG) -endian little -if JTAG -speed auto -noir -LocalhostOnly -noreset
-# set to same port as openocd default
-_MTB_RECIPE__JLINK_GDB_SERVER_ARGS+= -port 3333
+_MTB_RECIPE__JLINK_GDB_SERVER_ARGS=-if jtag -device $(_MTB_RECIPE__JLINK_DEVICE_CFG) -endian little -speed auto -port 3333 -noreset -noir -localhostonly 1 -singlerun -strict -timeout 0 -nogui
 
 #
 # gdb server selection
 #
-ifeq ($(GDB_SERVER),jlink)
-_MTB_RECIPE__GDB_SERVER_COMMAND:=$(_MTB_RECIPE__JLINK_DIR)/JLinkGDBServerCL $(_MTB_RECIPE__JLINK_GDB_SERVER_ARGS)
+ifeq ($(_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR), JLink)
+_MTB_RECIPE__GDB_SERVER_COMMAND:="$(MTB_CORE__JLINK_GDB_EXE)" $(_MTB_RECIPE__JLINK_GDB_SERVER_ARGS)
 else
 _MTB_RECIPE__GDB_SERVER_COMMAND:=$(_MTB_RECIPE__OPENOCD_DIR)/bin/openocd -s $(_MTB_RECIPE__OPENOCD_DIR)/scripts -c \
 								"$(_MTB_RECIPE__OPENOCD_GDB_SERVER_ARGS)"
-endif # ($(GDB_SERVER),jlink)
+endif
 
 #
 # custom download
@@ -101,7 +99,7 @@ program: build
 #
 ifeq ($(LIBNAME),)
 
-program qprogram: $(_MTB_CORE__QBUILD_MK_FILE)
+program qprogram: $(_MTB_CORE__QBUILD_MK_FILE) debug_interface_check
 	@echo "Programming target device ... "
 	$(MTB__NOISE)$(_MTB_RECIPE__DOWNLOAD_CMD)
 	@echo "Programming complete"
@@ -112,9 +110,10 @@ qprogram: $(_MTB_CORE__QBUILD_MK_FILE)
 	echo
 endif
 
-debug: qdebug
+debug: debug_$(_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR)
+qdebug: qdebug_$(_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR)
 
-qdebug:
+debug_$(_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR) qdebug_$(_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR): debug_interface_check
 ifeq ($(LIBNAME),)
 	@echo;\
 	echo ==============================================================================;\
@@ -130,9 +129,9 @@ else
 	echo
 endif
 
-attach:
+attach: debug_interface_check
 	@echo;\
 	echo "Starting GDB Client... ";\
 	$(MTB_TOOLCHAIN_GCC_ARM__GDB) -s $(_MTB_RECIPE__GDB_SYM) -x $(_MTB_RECIPE__GDB_ARGS)
 
-.PHONY: program qprogram debug qdebug 
+.PHONY: program qprogram debug qdebug debug_$(_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR) qdebug_$(_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR)

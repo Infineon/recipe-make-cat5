@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# Copyright 2016-2023, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -1476,25 +1476,24 @@ sub create_mdh_file
     close $sec_xip_mdh_handle;
 
     # Generate the final MDH file
-    my $xip_offset = 0x00100000;
-
     open(my $dst_mdh_handle, '>', $dst_mdh_file) || die ("\nERROR(".__FILE__.":".__LINE__.") : Can't open $dst_mdh_file\n");
     binmode $dst_mdh_handle, ':raw';
 
     # Secure XIP
-    print $dst_mdh_handle $sec_xip_mdh_data;
+    # only add this if different from Secure FW record
+    my ($sec_xip_mdh_addr) = unpack "L", $sec_xip_mdh_data;
+    if($sec_xip_mdh_addr != $region_param->{SEC}{SUB_DS_SIGN_ADR}) {
+        print $dst_mdh_handle $sec_xip_mdh_data;
+    }
 
     # Secure FW
-    print $dst_mdh_handle pack("LLSS",
-        $xip_offset + $region_param->{SEC}{SUB_DS_SIGN_ADR}, $region_param->{SEC}{BIN_LEN_PADDED}, 1, 1);
+    print $dst_mdh_handle pack("LLSS", $region_param->{SEC}{SUB_DS_SIGN_ADR}, $region_param->{SEC}{BIN_LEN_PADDED}, 1, 1);
 
     # FW
-    print $dst_mdh_handle pack("LLSS",
-        $xip_offset + $region_param->{FW}{SUB_DS_SIGN_ADR}, $region_param->{FW}{BIN_LEN_PADDED}, 0, 0);
+    print $dst_mdh_handle pack("LLSS", $region_param->{FW}{SUB_DS_SIGN_ADR}, $region_param->{FW}{BIN_LEN_PADDED}, 0, 0);
 
     # App
-    print $dst_mdh_handle pack("LLSS",
-        $xip_offset + $region_param->{APP}{SUB_DS_SIGN_ADR}, $region_param->{APP}{BIN_LEN_PADDED_SUBDS}, 0, 0);
+    print $dst_mdh_handle pack("LLSS", $region_param->{APP}{SUB_DS_SIGN_ADR}, $region_param->{APP}{BIN_LEN_PADDED_SUBDS}, 0, 0);
 
     # Terminator
     print $dst_mdh_handle pack("LLSS", 0, 0, 0, 0);

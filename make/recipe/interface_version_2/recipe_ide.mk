@@ -6,7 +6,7 @@
 #
 ################################################################################
 # \copyright
-# Copyright 2022-2023 Cypress Semiconductor Corporation
+# Copyright 2022-2024 Cypress Semiconductor Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -37,9 +37,6 @@ else
 _MTB_RECIPE__ELF_FILE?=./$(notdir $(MTB_TOOLS__OUTPUT_BASE_DIR))/$(TARGET)/$(CONFIG)/$(APPNAME).$(MTB_RECIPE__SUFFIX_TARGET)
 endif
 
-_MTB_RECIPE__JLINK_DEVICE_CFG:=Cortex-M33
-_MTB_RECIPE__OPENOCD_DEVICE_CFG:=cyw55500.cfg
-
 _MTB_RECIPE__IDE_TEMPLATE_DIR:=$(MTB_TOOLS__RECIPE_DIR)/make/scripts/interface_version_2
 
 ################################################################################
@@ -56,14 +53,31 @@ MTB_RECIPE__IDE_RECIPE_METADATA_FILE:=$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/ide_recipe
 
 # JLink path
 ifneq (,$(MTB_JLINK_DIR))
-ifneq (,$(MTB_CORE__JLINK_EXE))
-_MTB_RECIPE__ECLIPSE_JLINK_EXE:=$(MTB_CORE__JLINK_EXE)
+ifneq (,$(MTB_CORE__JLINK_GDB_EXE))
+_MTB_RECIPE__ECLIPSE_JLINK_EXE:=$(MTB_CORE__JLINK_GDB_EXE)
 else
 _MTB_RECIPE__ECLIPSE_JLINK_EXE:=$${jlink_path}/$${jlink_gdbserver}
 endif
 else
 _MTB_RECIPE__ECLIPSE_JLINK_EXE:=$${jlink_path}/$${jlink_gdbserver}
 endif
+
+# GDB path
+_MTB_RECIPE__ECLIPSE_GDB=$${cy_tools_path:CY_TOOL_arm-none-eabi-gdb_EXE}
+
+# If a custom name needs to be provided for the IDE environment it can be specified by
+# CY_IDE_PRJNAME. If CY_IDE_PRJNAME was not set on the command line, use APPNAME as the
+# default. CY_IDE_PRJNAME can be important in some environments like eclipse where the
+# name used within the project is not necessarily what the user created. This can happen
+# in Eclipse if there is already a project with the desired name. In this case Eclipse
+# will create its own name. That name must still be used for launch configurations instead
+# of the name the user actually gave. It can also be necessary when there are multiple
+# applications that get created for a single design. In either case we allow a custom name
+# to be provided. If one is not provided, we will fallback to the default APPNAME.
+ifeq ($(CY_IDE_PRJNAME),)
+CY_IDE_PRJNAME=$(APPNAME)
+endif
+_MTB_RECIPE__ECLIPSE_PROJECT_NAME=$(CY_IDE_PRJNAME)
 
 eclipse_generate: recipe_eclipse_text_replacement_data_file recipe_eclipse_metadata_file
 eclipse_generate: MTB_CORE__EXPORT_CMDLINE += -textdata $(_MTB_RECIPE__IDE_TEXT_DATA_FILE) -metadata $(_MTB_RECIPE__IDE_TEMPLATE_META_DATA_FILE)
@@ -72,12 +86,13 @@ recipe_eclipse_text_replacement_data_file:
 	$(call mtb__file_write,$(_MTB_RECIPE__IDE_TEXT_DATA_FILE),&&_MTB_RECIPE__OPENOCD_CFG&&=$(_MTB_RECIPE__OPENOCD_DEVICE_CFG))
 	$(call mtb__file_append,$(_MTB_RECIPE__IDE_TEXT_DATA_FILE),&&_MTB_RECIPE__JLINK_DEVICE&&=$(_MTB_RECIPE__JLINK_DEVICE_CFG))
 	$(call mtb__file_append,$(_MTB_RECIPE__IDE_TEXT_DATA_FILE),&&_MTB_RECIPE__PROG_FILE&&=$(_MTB_RECIPE__ECLIPSE_ELF_FILE))
-	$(call mtb__file_append,$(_MTB_RECIPE__IDE_TEXT_DATA_FILE),&&_MTB_RECIPE__ECLIPSE_GDB&&=$(CY_ECLIPSE_GDB))
+	$(call mtb__file_append,$(_MTB_RECIPE__IDE_TEXT_DATA_FILE),&&_MTB_RECIPE__ECLIPSE_GDB&&=$(_MTB_RECIPE__ECLIPSE_GDB))
 	$(call mtb__file_append,$(_MTB_RECIPE__IDE_TEXT_DATA_FILE),&&_MTB_RECIPE__ECLIPSE_JLINK_EXE&&=$(_MTB_RECIPE__ECLIPSE_JLINK_EXE))
+	$(call mtb__file_append,$(_MTB_RECIPE__IDE_TEXT_DATA_FILE),&&_MTB_RECIPE__PRJ_NAME&&=$(_MTB_RECIPE__ECLIPSE_PROJECT_NAME))
 
 recipe_eclipse_metadata_file:
 	$(call mtb__file_write,$(_MTB_RECIPE__IDE_TEMPLATE_META_DATA_FILE),TEMPLATE_REPLACE=$(_MTB_RECIPE__IDE_TEMPLATE_DIR)/eclipse/$(_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR)=.mtbLaunchConfigs)
-	$(call mtb__file_append,$(_MTB_RECIPE__IDE_TEMPLATE_META_DATA_FILE),TEMPLATE_REPLACE=$(_MTB_RECIPE__IDE_TEMPLATE_DIR)/eclipse/Program.launch=.mtbLaunchConfigs/$(_MTB_ECLIPSE_PROJECT_NAME) Program.launch)
+	$(call mtb__file_append,$(_MTB_RECIPE__IDE_TEMPLATE_META_DATA_FILE),TEMPLATE_REPLACE=$(_MTB_RECIPE__IDE_TEMPLATE_DIR)/eclipse/Program.launch=.mtbLaunchConfigs/$(_MTB_RECIPE__ECLIPSE_PROJECT_NAME) Program.launch)
 	$(call mtb__file_append,$(_MTB_RECIPE__IDE_TEMPLATE_META_DATA_FILE),UUID=&&PROJECT_UUID&&)
 
 .PHONY: recipe_eclipse_text_replacement_data_file recipe_eclipse_metadata_file
@@ -117,7 +132,6 @@ recipe_vscode_text_replacement_data_file:
 recipe_vscode_metadata_file:
 	$(call mtb__file_write,$(_MTB_RECIPE__IDE_TEMPLATE_META_DATA_FILE),TEMPLATE_REPLACE=$(_MTB_RECIPE__IDE_TEMPLATE_DIR)/vscode/$(_MTB_RECIPE__PROGRAM_INTERFACE_SUBDIR)=.vscode)
 	$(call mtb__file_append,$(_MTB_RECIPE__IDE_TEMPLATE_META_DATA_FILE),TEMPLATE_REPLACE=$(_MTB_RECIPE__IDE_TEMPLATE_DIR)/vscode/tasks.json=.vscode/tasks.json)
-	$(call mtb__file_append,$(_MTB_RECIPE__IDE_TEMPLATE_META_DATA_FILE),TEMPLATE_REPLACE=$(MTB_TOOLS__CORE_DIR)/make/scripts/interface_version_2/vscode/workspace/wks.code-workspace=$(APPNAME).code-workspace)
 
 .PHONY: recipe_vscode_text_replacement_data_file recipe_vscode_metadata_file
 

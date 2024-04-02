@@ -1,8 +1,4 @@
 # CYW55513 GNU make Build System Release Notes
-
-## This version of the recipe-make-cat5 library is a Beta release to support CYW55513 devices only. Do not use it for production development or in applications targeting other devices.
-
-# CYW55513 GNU make Build System Release Notes
 This repo provides the build recipe make files and scripts for building and programming CYW55513 applications. Builds can be run either through a command-line interface (CLI) or through the Eclipse IDE for ModusToolbox.
 
 ### What's Included?
@@ -21,6 +17,12 @@ This release of the CYW55513 GNU make build recipe includes complete support for
 This also includes the getlibs.bash script that can be used directly, or via the make target to download additional git repo based libraries for the application.
 
 ### What Changed?
+#### v1.2.0
+* CYW55513 device support added
+
+#### v1.1.1
+* Minor change to symbol file handling
+
 #### v1.0.0
 * Initial production release
 
@@ -34,17 +36,17 @@ This version of the CYW55513 build system was validated for compatibility with t
 
 | Software and Tools                        | Version |
 | :---                                      | :----:  |
-| ModusToolbox Software Environment         | 3.0     |
+| ModusToolbox Software Environment         | 3.2     |
 | GCC Compiler                              | 11.3    |
 | IAR Compiler                              | 9.3     |
 | ARM Compiler                              | 6.16    |
 
-Minimum required ModusToolbox Software Environment: v3.0
+Minimum required ModusToolbox Software Environment: v3.2
 
 ### More information
 * [Infineon GitHub](https://github.com/Infineon)
 * [ModusToolbox](https://www.infineon.com/cms/en/design-support/tools/sdk/modustoolbox-software)
 
 ---
-© Cypress Semiconductor Corporation, 2022.
+© Cypress Semiconductor Corporation, 2022-2024.
 

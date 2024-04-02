@@ -47,7 +47,8 @@
             "overrideAttachCommands": [
                 "set mem inaccessible-by-default off",
                 "-enable-pretty-printing",
-                "set remotetimeout 15"
+                "set remotetimeout 15",
+                "info threads"
             ],
             "overrideRestartCommands": [
             ],

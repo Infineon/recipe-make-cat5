@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright 2016-2023, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -179,10 +179,10 @@ fi
 
 if [ "$VERBOSE" != "" ]; then
 echo "$CY_TOOL_PERL" "$CYWICEDSCRIPTS/ChipLoad.pl" -build_path $dir -id $CYWICEDID -btp $CYWICEDBTP \
-	-mini $CYWICEDMINI -hex $CY_APP_HEX -flags $CYWICEDFLAGS -uart $CY_APP_UART $CYWICEDBAUDFILECMD -direct $DIRECT_LOAD -chipload "$CY_TOOL_chipload_EXE_ABS" -det_and_id $CY_TOOL_det_and_id_EXE_ABS
+	-mini $CYWICEDMINI -hex $CY_APP_HEX -flags $CYWICEDFLAGS -uart $CY_APP_UART $CYWICEDBAUDFILECMD -direct $DIRECT_LOAD -chipload "$CY_TOOL_chipload_EXE_ABS" -det_and_id "$CY_TOOL_det_and_id_EXE_ABS"
 fi
 "$CY_TOOL_PERL" "$CYWICEDSCRIPTS/ChipLoad.pl" -build_path $dir -id $CYWICEDID -btp $CYWICEDBTP \
-		-mini $CYWICEDMINI -hex $CY_APP_HEX -flags $CYWICEDFLAGS -uart $CY_APP_UART $CYWICEDBAUDFILECMD -direct $DIRECT_LOAD -chipload "$CY_TOOL_chipload_EXE_ABS" -det_and_id $CY_TOOL_det_and_id_EXE_ABS
+		-mini $CYWICEDMINI -hex $CY_APP_HEX -flags $CYWICEDFLAGS -uart $CY_APP_UART $CYWICEDBAUDFILECMD -direct $DIRECT_LOAD -chipload "$CY_TOOL_chipload_EXE_ABS" -det_and_id "$CY_TOOL_det_and_id_EXE_ABS"
 
 if [ $? -eq 0 ]; then
    echo "Download succeeded"
@@ -193,22 +193,9 @@ else
    echo
    echo "If you have issues downloading to the kit, follow the steps below:"
    echo
-if [ "$CY_LCS" != "DM" ]; then
    echo "Press and hold the 'Recover' button on the kit."
    echo "Press and hold the 'Reset' button on the kit."
    echo "Release the 'Reset' button."
    echo "After one second, release the 'Recover' button."
-else
-   echo "Restart the 'make ... program'."
-   echo "When the 'Pause for recovery reset' message is displayed, make sure the keyboard cursor is active in the build console."
-   echo "Press and hold the 'Recover' button on the kit."
-   echo "Press and hold the 'Reset' button on the kit."
-   echo "Release the 'Reset' button then quickly release the 'Recover' button."
-   echo "Immediately press a key on the keyboard to resume the build console processing."
-   echo ""
-   echo "Replace 'UART?=AUTO' with 'UART=xxx' in the application makefile, where xxx is the HCI port name"
-   echo "This would be COMXX for Windows or /dev/ttyXX for Linux or macOS."
-   echo "Alternatively, use UART=xxx on the 'make' command line."
-fi
    exit 1
 fi

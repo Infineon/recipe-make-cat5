@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# Copyright 2016-2023, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -44,10 +44,11 @@ sub main
     my $hdf = {};
     my $entry2code = {};
     my $cgs_list = [];
-    my $app_entry_function;
     my $outfile;
     my $btp_file;
     my $direct_load;
+    my $flash_patch = 0;
+    my $ds_start = 0;
     my $OUT;
 
 	foreach my $arg (@ARGV) {
@@ -64,14 +65,17 @@ sub main
 		elsif($arg =~ /\.hdf$/) {
 			$hdf_in = $arg;
 		}
-		elsif($arg =~ /\.ld$/) {
-			$app_ld = $arg;
+        elsif($arg =~ /\.ld$/) {
+            $app_linker_script = $arg;
+        }
+        elsif($arg =~ /\.sct$/) {
+            $app_linker_script = $arg;
+        }
+		elsif($arg =~ /^DS_LOCATION=(\w+)/) {
+			$ds_start = hex($1);
 		}
-		elsif($arg =~ /\.btp$/) {
-			$btp_file = $arg;
-		}
-		elsif($arg =~ /(\w+)\.entry$/) {
-			$app_entry_function = $1;
+		elsif($arg =~ /^FLASH_PATCH/) {
+			$flash_patch = 1;
 		}
 		elsif($arg =~ /^DIRECT_LOAD/) {
 			$direct_load = 1;
@@ -81,50 +85,40 @@ sub main
 		}
 	}
 
+    # read in elf data
 	my $sections = [];
 	my $stringtable = {};
 	my $sym_str_tbl = {};
 	my $symbol_entries = [];
 	parse_elf($app_elf, $sections, $stringtable, $sym_str_tbl, $symbol_entries, 0);
 
+    # get cgs structure definitions
     parse_hdf($hdf_in, $hdf, $entry2code);
-#    output_cgs_cfg($cfg_prep, $entry2code, $hdf_out, $symbol_entries);
+
+    # swap output from stdout to file handle
     if(defined $outfile) {
         open($OUT, ">", $outfile) || die "Could not open $outfile, $!\n";
         select $OUT;
     }
 
-    my $btp = {};
-    parse_btp($btp_file, $btp);
-
+    # check linker script for resource information
     my $load_regions = {};
-    my $ld_info = {};
-    scan_ld_file($app_ld, $ld_info, $load_regions);
+    my $linker_script_info = {};
+    scan_linker_script($app_linker_script, $linker_script_info, $load_regions);
 
-    # combine the cgs files
+    # scan the input cgs files
     my @cgs_records;
-    my $got_xip_skip_cgs = 0;
     foreach my $cgs (@{$cgs_list}) {
         my $cgs_record = {};
-        # transport cgs
-        if($cgs =~ /wiced_(uart|spi)\.cgs$/) {
-            $cgs_record->{'type'} = 'transport';
-            $cgs_record->{'order'} = 1;
-        }
         # patch cgs
-        elsif($cgs =~ /patch\.cgs$/) {
+        if($cgs =~ /patch\.cgs$/) {
             $cgs_record->{'type'} = 'patch';
-            $cgs_record->{'order'} = 2;
-        }
-        elsif($cgs =~ /add_xip_skip_config\.cgs$/) {
-            $cgs_record->{'type'} = 'skip_xip';
-            $cgs_record->{'order'} = 4;
-            $got_xip_skip_cgs = 1;
+            $cgs_record->{'order'} = 1;
         }
         # platform cgs
         elsif(($cgs =~ /platforms\/[^\.]+.cgs$/) || ($cgs =~ /TARGET_.*\/.*.cgs$/)) {
             $cgs_record->{'type'} = 'platform';
-            $cgs_record->{'order'} = 3;
+            $cgs_record->{'order'} = 2;
         }
         else {
             die "could not categorize \"$cgs\" for processing\n";
@@ -137,31 +131,30 @@ sub main
         post_process_cgs($cgs_record, $direct_load);
         push @cgs_records, $cgs_record;
     }
-    # merge cgs that enables xip skip with patch cgs, then embed xip
-    if($got_xip_skip_cgs) {
-        post_process_cgs_for_xip(\@cgs_records, $sections, $ld_info->{flash_ds});
-    }
+
+    # start app cgs with patch and platform cgs file, then append generated app cgs records
     @cgs_records = sort { $a->{order} <=> $b->{order} } @cgs_records;
     dump_cgs(\@cgs_records);
 
-    my $sym = find_symbol($symbol_entries, $app_entry_function);
-    my $addr = $sym->{st_value} if defined $sym;
-    #	output_hex_elf($app_elf, $sections, $addr);
-    output_cgs_elf($app_elf, $sections, $symbol_entries, $stringtable, $hdf, $entry2code, $app_entry_function, $direct_load);
+    # the bulk of the work, converting app elf data to cgs records
+    output_cgs_elf($app_elf, $sections, $symbol_entries, $stringtable, $hdf, $entry2code,
+                $direct_load, $ds_start, defined $load_regions->{xip_section});
 
+    # append any cgs records needed to place after app cgs records
     post_app_cgs(\@cgs_records);
 
+    # report resource usage to stdout
     if(defined $outfile) {
         select STDOUT;
     }
-    report_resource_usage($sections, $ld_info, $load_regions, $direct_load);
+    report_resource_usage($sections, $linker_script_info, $load_regions, $direct_load);
 }
 
 sub dump_cgs
 {
     my ($cgs_records) = @_;
     foreach my $cgs_record (@{$cgs_records}) {
-        print "\n\n############### dump $cgs_record->{file}\n";
+        print "\n\n############### dump $cgs_record->{file}\n" if ($cgs_record->{file} !~ /platform.cgs/);
         foreach my $line (@{$cgs_record->{lines}}) {
             print $line;
         }
@@ -172,9 +165,36 @@ sub post_process_cgs
 {
     my ($cgs_record, $direct_load) = @_;
     my @lines;
+
+    # if 55900, pull MPAF Framework entry out of platform cgs for later use
+    if($cgs_record->{file} =~ /55(5|9)00A(0|1)/) {
+        @lines = ();
+        push @lines, @{$cgs_record->{lines}};
+        $cgs_record->{lines} = [];
+        my $in_mpaf_entry = 0;
+        foreach my $line (@lines) {
+            if ($in_mpaf_entry) {
+                push @{$cgs_record->{mpaf_lines}}, $line;
+                if (index($line, '}') != -1) {
+                    $in_mpaf_entry = 0;
+                }
+            }
+            else {
+                if(index($line, 'ENTRY "BT MPAF FRAMEWORK"') != -1) {
+                    $cgs_record->{'mpaf_lines'} = [] if !defined $cgs_record->{mpaf_lines};
+                    $in_mpaf_entry = 1;
+                    push @{$cgs_record->{mpaf_lines}}, $line;
+                }
+                else {
+                    push @{$cgs_record->{lines}}, $line;
+                }
+            }
+        }
+    }
     return if $cgs_record->{type} ne 'patch';
 
-    if($direct_load && $cgs_record->{file} !~ /43012C0/) {
+    # convert Data entries to DIRECT_LOAD if using direct load
+    if($direct_load) {
         push @lines, @{$cgs_record->{lines}};
         $cgs_record->{lines} = [];
         foreach my $line (@lines) {
@@ -182,354 +202,186 @@ sub post_process_cgs
             push @{$cgs_record->{lines}}, $line;
         }
     }
-
-    # for now just need to split TCA records from patch.cgs to end of combined cgs
-    return if $cgs_record->{file} !~ /(20721B2|20719B2|20739B2)/;
-    @lines = ();
-    push @lines, @{$cgs_record->{lines}};
-    $cgs_record->{lines} = [];
-    my $in_tca_entry = 0;
-    foreach my $line (@lines) {
-        if ($in_tca_entry) {
-            push @{$cgs_record->{tca_lines}}, $line;
-            if (index($line, '}') != -1) {
-                $in_tca_entry = 0;
-            }
-        }
-        else {
-            if (index($line, 'ENTRY "Temperature Correction Algorithm Config"') != -1
-            || index($line, 'ENTRY "BR TCA Table"') != -1
-            || index($line, 'ENTRY "EDR TCA Table"') != -1
-            || index($line, 'ENTRY "LE TCA Table"') != -1
-            || index($line, 'ENTRY "LE2 TCA Table"') != -1) {
-                $cgs_record->{'tca_lines'} = [] if !defined $cgs_record->{tca_lines};
-                $in_tca_entry = 1;
-                push @{$cgs_record->{tca_lines}}, $line;
-            }
-            else {
-                push @{$cgs_record->{lines}}, $line;
-            }
-        }
-    }
-}
-
-sub post_process_cgs_for_xip
-{
-    my ($cgs_list, $patch_elf_sections, $ds_start) = @_;
-    die "DS location not defined in btp\n" if !defined $ds_start;
-    my $add_config_cgs;
-    my $first_cgs = $cgs_list->[0]; # has include <hdf>
-    my $index = 0;
-    my $remove_index;
-
-    # find patch cgs and skip xip cgs
-    foreach my $cgs (@{$cgs_list}) {
-        if($cgs->{order} < $first_cgs->{order}) {
-            $first_cgs = $cgs;
-        }
-        if($cgs->{type} eq 'skip_xip') {
-            $add_config_cgs = $cgs;
-            $remove_index = $index;
-        }
-        $index++;
-    }
-    return if !defined $remove_index;
-    die "unexpected cgs type sorts as first\n" if $first_cgs->{type} ne 'patch';
-
-    # locate xip section in elf
-    my $xip_section;
-    foreach my $section (@{$patch_elf_sections}) {
-        next if !defined $section->{name};
-        # .app_xip_area will be merged into XIP Skip Block
-        if( $section->{name} eq '.app_xip_area') {
-            $xip_section = $section;
-            last;
-        }
-    }
-    warn "expected to find elf section named \".app_xip_area\"\n" if !defined $xip_section;
-    return if !defined $xip_section;
-
-    # merge skip xip cgs into patch cgs
-    my @updated_lines;
-    my $merged = 0;
-    # keep track of where the config data will be located in DS
-    # then we can pad as needed up to the actual XIP start address
-    my $ds_addr = $ds_start + 16; # signature
-    while(defined (my $line = shift @{$first_cgs->{lines}})) {
-        # find entry we want to merge before
-        if(!$merged && $line =~ /^\s*ENTRY\s+\"([^\"]+)/) {
-            my $entry_name = $1;
-            # merge after Local Name and Config Data Version
-            if($entry_name =~ /(Local Name|Config Data Version)/) {
-                $ds_addr += get_ds_size($entry_name, $first_cgs->{lines});
-            }
-            else {
-                # add merge cgs lines before this line
-                while(defined(my $new_line = shift @{$add_config_cgs->{lines}})) {
-                    next if $new_line =~ /^\s*DEFINITION/;
-                    push @updated_lines, $new_line;
-                    if($new_line =~ /^\s*ENTRY\s+\"([^\"]+)/) {
-                        $entry_name = $1;
-                        if($entry_name eq 'Data') {
-                            $ds_addr += get_ds_size($entry_name, $add_config_cgs->{lines});
-                        }
-                        elsif($entry_name eq 'Function Call') {
-                            $ds_addr += get_ds_size($entry_name, $add_config_cgs->{lines});
-                        }
-                    }
-                }
-                # now insert Skip Block type (010B) with embedded xip
-                if($xip_section->{sh_addr} < ($ds_addr+5)) {
-                    warn sprintf "xip start 0x%x overlaps with DS data\n", $xip_section->{sh_addr};
-                    warn sprintf "check ConfigDSLocation 0x%x in *.btp and CY_CORE_APP_SPECIFIC_DS_LEN in <TARGET>.mk\n", $ds_start;
-                    die "\n";
-                }
-                # determine leb128 encoded length to add (2 or 3 bytes) along with 2-byte type
-                $ds_addr += get_ds_size("Skip Block", undef, $xip_section, $ds_addr);
-                my @data = unpack "C*", $xip_section->{data};
-                # now pad Skip block cgs data up to XIP start
-                for(my $i = $ds_addr; $i < $xip_section->{sh_addr}; $i++) {
-                    unshift @data, 0;
-                }
-
-                # print skip block into cgs file
-                push @updated_lines, "ENTRY \"Skip Block\"\n";
-                push @updated_lines, "{\n";
-                push @updated_lines, "\t\"Data\" = \n";
-                push @updated_lines, "\tCOMMENTED_BYTES\n";
-                push @updated_lines, "\t{\n";
-                push @updated_lines, "\t\t<hex>";
-                for(my $i=0; $i < scalar(@data); $i++) {
-                    if(($i & 0xf) == 0) {
-                        push @updated_lines, sprintf("\n\t\t%02x", $data[$i]);
-                    }
-                    else {
-                        push @updated_lines, sprintf(" %02x", $data[$i]);
-                    }
-                }
-                push @updated_lines, "\n\t} END_COMMENTED_BYTES\n";
-                push @updated_lines, "}\n";
-                $merged = 1;
-            }
-        }
-        push @updated_lines, $line;
-    }
-    $first_cgs->{lines} = [];
-    push @{$first_cgs->{lines}}, @updated_lines;
-    # drop add_config cgs from list
-    splice @{$cgs_list}, $remove_index, 1;
-}
-
-sub get_ds_size
-{
-    my ($entry_name, $lines, $xip_section, $ds_addr) = @_;
-    my $len = 0;
-    if($entry_name eq 'Local Name') {
-        $len = 3;
-        foreach my $line (@{$lines}) {
-            if($line =~ /\"Name\"\s*=\s*\"([^\"]+)\"/) {
-                $len += length($1) + 1;
-                last;
-            }
-        }
-    }
-    elsif($entry_name eq 'Config Data Version') {
-        $len = 3 + 2;
-    }
-    elsif($entry_name eq 'Function Call') {
-        $len = 3 + 4;
-    }
-    elsif($entry_name eq 'Data') {
-        $len += 3 + 4;
-        foreach my $line1 (@{$lines}) {
-            my $line = $line1;
-            $line =~ s/\s+$//;
-            if($line =~ /^\s*[0-9A-Fa-f ]+$/) {
-                my @bytes = split " ", $line;
-                foreach my $byte (@bytes) {
-                    $len++;
-                }
-            }
-            elsif($line =~ /^\}$/) {
-                last;
-            }
-        }
-    }
-    elsif($entry_name eq 'Skip Block') {
-        $len += 2;
-        # gap is diff between xip start and current position in DS, minus leb128 len (2 or 3 bytes)
-        my $gap = $xip_section->{sh_addr} - $ds_addr - $len - 2;
-        my $xip_len = length($xip_section->{data});
-        # gap decreases if leb128 is 3 bytes
-        if(($xip_len+$gap) >= 0x4000) {
-            $xip_section->{data} .= pack("C",0) if ($xip_len+$gap) == 0x4000;
-            $gap--;
-        }
-        # leb128 takes 2 bytes up to 0x3fff, then 3
-        # there is a leb128 length for xip len plus gap that can't be compensated for by adjusting gap
-        $len +=  2;
-        if(($xip_len+$gap) >= 0x4000) {
-            $len++;
-        }
-    }
-    else {
-        die "Unexpected cgs entry $entry_name\n";
-    }
-
-    return $len;
-}
-
-sub parse_btp
-{
-    my ($btp, $btp_param) = @_;
-    open(my $BTP, "<", $btp) || die "Could not open *.btp file \"$btp\", $!";
-    while(defined(my $line = <$BTP>)) {
-        if($line =~ /(\w+)\s*\=\s*(0x[0-9A-Fa-f]+)/) {
-            $btp_param->{$1} = hex($2);
-        }
-        elsif($line =~ /(\w+)\s*\=\s*(.*)$/) {
-            $btp_param->{$1} = $2;
-        }
-    }
-    close $BTP;
 }
 
 sub post_app_cgs
 {
     my ($cgs_records) = @_;
     foreach my $cgs_record (@{$cgs_records}) {
-        next if $cgs_record->{type} ne 'patch';
-        next if !defined $cgs_record->{tca_lines};
-        print "\n\n############### dump TCA entries from $cgs_record->{file}\n";
-        foreach my $line (@{$cgs_record->{tca_lines}}) {
-            print $line;
+        if(defined $cgs_record->{mpaf_lines}) {
+            print "\n\n############### dump MPAF entry from $cgs_record->{file}\n";
+            foreach my $line (@{$cgs_record->{mpaf_lines}}) {
+                print $line;
+            }
         }
         last;
     }
 }
 
-sub scan_ld_file
+sub scan_linker_script
 {
-	my ($ld_file, $ld_info, $load_regions) = @_;
-	my $mem_type_names = { ram => "SRAM", aon => "Battery backed RAM", static_section => "Static Data", xip_section => "Flash", xip_section_ds2 => "Flash", pram => "Patch RAM"};
-	open(my $LD, "<", $ld_file) || die "Could not read $ld_file, $!\n";
-	while(defined(my $line = <$LD>)) {
-		if($line =~ /pram_patch_begin=0x([0-9A-F]+)/) {
-			$ld_info->{'pram_patch_begin'} = hex($1);
-		}
-		if($line =~ /pram_patch_end=0x([0-9A-F]+)/) {
-			$ld_info->{'pram_patch_end'} = hex($1);
-		}
-		if($line =~ /ram_patch_begin=0x([0-9A-F]+)/) {
-			$ld_info->{'ram_patch_begin'} = hex($1);
-		}
-		if($line =~ /ram_patch_end=0x([0-9A-F]+)/) {
-			$ld_info->{'ram_patch_end'} = hex($1);
-		}
-		if($line =~ /ram_end=0x([0-9A-F]+)/) {
-			$ld_info->{'ram_end'} = hex($1);
-		}
-		if($line =~ /FLASH0_BEGIN_ADDR=0x([0-9A-F]+)/) {
-			$ld_info->{'flash_begin'} = hex($1);
-		}
-		if($line =~ /FLASH0_LENGTH=0x([0-9A-F]+)/) {
-			$ld_info->{'flash_len'} = hex($1);
-		}
-		if($line =~ /FLASH0_DS=0x([0-9A-F]+)/) {
-			$ld_info->{'flash_ds'} = hex($1);
-		}
-		if($line =~ /FLASH0_DS2=0x([0-9A-F]+)/) {
-			$ld_info->{'flash_ds2'} = hex($1);
-		}
+    my ($linker_script, $linker_script_info, $load_regions) = @_;
+    my $curly_brace = 0;
+    my $mem_type_names = { ram => "SRAM",
+                           RAM => "SRAM",
+                           static_section => "Static Data",
+                           xip => "Flash",
+                           XIP => "Flash",
+                           pram => "Patch RAM"
+                         };
+    open(my $LD, "<", $linker_script) || die "Could not read $linker_script, $!\n";
+    while(defined(my $line = <$LD>)) {
+        if($line =~ /pram_patch_begin=0x([0-9A-F]+)/) {
+            $linker_script_info->{'pram_patch_begin'} = hex($1);
+        }
+        if($line =~ /pram_patch_end=0x([0-9A-F]+)/) {
+            $linker_script_info->{'pram_patch_end'} = hex($1);
+        }
+        if($line =~ /ram_patch_begin=0x([0-9A-F]+)/) {
+            $linker_script_info->{'ram_patch_begin'} = hex($1);
+        }
+        if($line =~ /ram_patch_end=0x([0-9A-F]+)/) {
+            $linker_script_info->{'ram_patch_end'} = hex($1);
+        }
+        if($line =~ /ram_end=0x([0-9A-F]+)/) {
+            $linker_script_info->{'ram_end'} = hex($1);
+        }
+        if($line =~ /FLASH0_BEGIN_ADDR=0x([0-9A-F]+)/) {
+            $linker_script_info->{'flash_begin'} = hex($1);
+        }
+        if($line =~ /FLASH0_LENGTH=0x([0-9A-F]+)/) {
+            $linker_script_info->{'flash_len'} = hex($1);
+        }
+        if($line =~ /FLASH0_DS=0x([0-9A-F]+)/) {
+            $linker_script_info->{'flash_ds'} = hex($1);
+        }
         if($line =~ /UPGRADE_STORAGE_LENGTH=0x([0-9A-F]+)/) {
-			$ld_info->{'upgrade_storage'} = hex($1);
+            $linker_script_info->{'upgrade_storage'} = hex($1);
+        }
+        if($line =~ /^\s*\{/) {
+            $curly_brace++;
+        }
+        if($line =~ /^\s*\}/) {
+            $curly_brace--;
+        }
+        # for ARM linker script, check each load region
+        if($curly_brace == 0 && $line =~ /^\s*(\w+)\s+(0x[0-9A-Fa-f]+)\s+(0x[0-9A-Fa-f]+)/) {
+            my $region = {};
+            $region->{'name'} = $1;
+            $region->{'type'} = $mem_type_names->{$1};
+            $region->{'start'} = hex($2);
+            $region->{'len'} = hex($3);
+            next if $region->{start} >= 0xF0000000;
+            $region->{'end'} = $region->{start} + $region->{len};
+            $region->{'start_used'} = 0xffffffff;
+            $region->{'end_used'} = 0;
+            $load_regions->{$1} = $region;
+        }
+        # for gcc linker script, check MEMORY
+        if($line =~ /^MEMORY/) {
+            my $line2 = <$LD>;
+            next unless $line2 =~ /\{/;
+            while(defined($line2 = <$LD>)) {
+                last if $line2 =~ /\}/;
+                $line2 =~ s/\s//g;
+                if($line2 =~ /(\w+)\((\w+)\)\:ORIGIN=(0x[0-9A-Fa-f]+),LENGTH=(0x[0-9A-Fa-f]+)/) {
+                    my $region = {};
+                    $region->{'name'} = $1;
+                    $region->{'type'} = $mem_type_names->{$1};
+                    $region->{'access'} = $2;
+                    $region->{'start'} = hex($3);
+                    $region->{'len'} = hex($4);
+                    next if $region->{start} >= 0xF0000000;
+                    $region->{'end'} = $region->{start} + $region->{len};
+                    $region->{'start_used'} = 0xffffffff;
+                    $region->{'end_used'} = 0;
+                    $load_regions->{$1} = $region;
+                }
 		}
-		if($line =~ /^MEMORY/) {
-			my $line2 = <$LD>;
-			next unless $line2 =~ /\{/;
-			while(defined($line2 = <$LD>)) {
-				last if $line2 =~ /\}/;
-				$line2 =~ s/\s//g;
-				if($line2 =~ /(\w+)\((\w+)\)\:ORIGIN=(0x[0-9A-Fa-f]+),LENGTH=(0x[0-9A-Fa-f]+)/) {
-					my $region = {};
-					$region->{'name'} = $1;
-					$region->{'type'} = $mem_type_names->{$1};
-					$region->{'access'} = $2;
-					$region->{'start'} = hex($3);
-					$region->{'len'} = hex($4);
-					next if $region->{start} >= 0xF0000000;
-					$region->{'end'} = $region->{start} + $region->{len};
-					$region->{'start_used'} = 0xffffffff;
-					$region->{'end_used'} = 0;
-					$load_regions->{$1} = $region;
-				}
-			}
-		}
-	}
-	close $LD;
+        }
+    }
+    close $LD;
+    if(defined $linker_script_info->{flash_begin} && defined $linker_script_info->{flash_len}) {
+        $linker_script_info->{flash_end} = $linker_script_info->{flash_begin} + $linker_script_info->{flash_len};
+    }
 }
 
 sub report_resource_usage
 {
-	my ($sections, $ld_info, $load_regions, $direct_load) = @_;
-	my $total;
-	my $end;
-	my $last_ram_addr = 0;
-	my $end_ram_addr = 0;
-	print "\n";
-	printf "Patch code starts at    0x%06X (RAM address)\n", $ld_info->{pram_patch_begin};
-	printf "Patch code ends at      0x%06X (RAM address)\n", $ld_info->{pram_patch_end};
-	printf "Patch ram starts at     0x%06X (RAM address)\n", $ld_info->{ram_patch_begin};
-	printf "Patch ram ends at       0x%06X (RAM address)\n", $ld_info->{ram_patch_end};
+    my ($sections, $linker_script_info, $load_regions, $direct_load) = @_;
+    my $total;
+    my $end;
+    my $last_ram_addr = 0;
+    my $end_ram_addr = 0;
+    print "\n";
+    printf "Patch code starts at    0x%08x (RAM address)\n", $linker_script_info->{pram_patch_begin};
+    printf "Patch code ends at      0x%08x (RAM address)\n", $linker_script_info->{pram_patch_end};
+    printf "Patch ram starts at     0x%08x (RAM address)\n", $linker_script_info->{ram_patch_begin};
+    printf "Patch ram ends at       0x%08x (RAM address)\n", $linker_script_info->{ram_patch_end};
 
-	print  "\nApplication memory usage:\n";
-	foreach my $section (@{$sections}) {
-		foreach my $region (values(%{$load_regions})) {
-			next if $section->{sh_addr} < $region->{start};
-			next if ($section->{sh_addr} + $section->{sh_size}) > $region->{end};
-			if($section->{sh_addr} < $region->{start_used}) {
-				$region->{start_used} = $section->{sh_addr};
-			}
-			if(($section->{sh_addr} + $section->{sh_size}) > $region->{end_used}) {
-				$region->{end_used} = $section->{sh_addr} + $section->{sh_size};
-			}
-			$section->{'mem_type'} = $region->{type};
-			last;
-		}
-		next unless defined $section->{mem_type};
-		$end = $section->{sh_addr} + $section->{sh_size};
-		printf "% 16s %8s start 0x%06X, end 0x%06X, size %d\n", $section->{name}, $section->{mem_type}, $section->{sh_addr},
-					$end, $section->{sh_size};
-		if($end > $last_ram_addr) {
-			$last_ram_addr = $end;
-		}
-	}
-	foreach my $region (values(%{$load_regions})) {
-		next if $region->{end_used} == 0;
-		my $use = $region->{end_used} - $region->{start_used};
-		$total += $use;
-		next if $use == 0;
-		printf "  %s (%s): used 0x%06X - 0x%06X size (%d)\n", $region->{name}, $region->{type}, $region->{start_used}, $region->{end_used}, $use;
-		# find end of SRAM
-		if($region->{type} eq 'SRAM') {
-			$end_ram_addr = $region->{end} if $end_ram_addr < $region->{end};
-		}
-	}
-	printf "  Total application footprint %d (0x%X)\n\n", $total, $total;
-	if(defined $ld_info->{upgrade_storage}) {
-		printf "DS available %d (0x%06X) at 0x%06X\n\n", $ld_info->{upgrade_storage}, $ld_info->{upgrade_storage}, $ld_info->{flash_ds};
-	}
-	if($direct_load && $direct_load != 1) {
-		if($last_ram_addr > $direct_load) {
-			printf "Moving DIRECT LOAD address from 0x%06X to 0x%06X\n",
-					$direct_load, ($last_ram_addr + 0x10) & ~0xf;
-			$direct_load = ($last_ram_addr + 0x10) & ~0xf; # round up
-		}
-		printf "App extends to 0x%06X, DIRECT LOAD address 0x%06X, end SRAM 0x%06X\n",
-						$last_ram_addr, $direct_load, $end_ram_addr;
-		printf "SS+DS cannot exceed %d (0x%04X) bytes\n",
-					$end_ram_addr - $direct_load, $end_ram_addr - $direct_load;
-	}
+    print  "\nApplication memory usage:\n";
+    foreach my $section (@{$sections}) {
+        next if $section->{sh_size} == 0;
+        foreach my $region (values(%{$load_regions})) {
+            next if $section->{sh_addr} < $region->{start};
+            next if ($section->{sh_addr} + $section->{sh_size}) > $region->{end};
+            if($section->{sh_addr} < $region->{start_used}) {
+                $region->{start_used} = $section->{sh_addr};
+            }
+            if(($section->{sh_addr} + $section->{sh_size}) > $region->{end_used}) {
+                $region->{end_used} = $section->{sh_addr} + $section->{sh_size};
+            }
+            $section->{'mem_type'} = $region->{type};
+            $section->{'region'} = $region->{name};
+            last;
+        }
+        next unless defined $section->{mem_type};
+        $end = $section->{sh_addr} + $section->{sh_size};
+        printf "% 16s %8s start 0x%08x, end 0x%08x, size %d\n", $section->{name}, $section->{mem_type}, $section->{sh_addr},
+                    $end, $section->{sh_size};
+        if($end > $last_ram_addr) {
+            $last_ram_addr = $end;
+        }
+    }
+    foreach my $region (values(%{$load_regions})) {
+        next if $region->{name} =~ /(log_section|LOG_SECTION)/;
+        next if $region->{name} =~ /(ram_pre_init|RAM_PRE_INIT)/;
+        next if $region->{end_used} == 0;
+        my $use = $region->{end_used} - $region->{start_used};
+        $total += $use;
+        next if $use == 0;
+        printf "  %s (%s): used 0x%08x - 0x%08x size (%d)\n", $region->{name}, $region->{type}, $region->{start_used}, $region->{end_used}, $use;
+        # find end of SRAM
+        if($region->{type} eq 'SRAM') {
+            $end_ram_addr = $region->{end} if $end_ram_addr < $region->{end};
+        }
+    }
+    printf "  Total application footprint %d (0x%X)\n\n", $total, $total;
+    if(defined $linker_script_info->{flash_begin} && defined $linker_script_info->{flash_len} && defined $linker_script_info->{flash_end}) {
+        printf "Flash mapping: start 0x%X end 0x%X length %d (0x%X)\n",
+                $linker_script_info->{flash_begin}, $linker_script_info->{flash_end}, $linker_script_info->{flash_len}, $linker_script_info->{flash_len};
+    }
+    if($direct_load && $direct_load != 1) {
+        if($last_ram_addr > $direct_load) {
+            printf "Moving DIRECT LOAD address from 0x%08x to 0x%08x\n",
+                    $direct_load, ($last_ram_addr + 0x10) & ~0xf;
+            $direct_load = ($last_ram_addr + 0x10) & ~0xf; # round up
+        }
+        printf "App extends to 0x%08x, DIRECT LOAD address 0x%08x, end SRAM 0x%08x\n",
+                    $last_ram_addr, $direct_load, $end_ram_addr;
+        printf "SS+DS cannot exceed %d (0x%04X) bytes\n",
+                    $end_ram_addr - $direct_load, $end_ram_addr - $direct_load;
+    }
+    else {
+        my $ds_begin = ($linker_script_info->{flash_ds} < $linker_script_info->{flash_begin}) ?
+                            $linker_script_info->{flash_ds} + $linker_script_info->{flash_begin} :
+                            $linker_script_info->{flash_ds};
+        my $ds_end = ($linker_script_info->{flash_end} < $linker_script_info->{flash_begin}) ?
+                            $linker_script_info->{flash_begin} + $linker_script_info->{flash_end} :
+                            $linker_script_info->{flash_end};
+        my $ds_len = $ds_end - $ds_begin;
+        printf "DS available %d (0x%06X) start 0x%08X end 0x%08X\n\n", $ds_len, $ds_len, $ds_begin, $ds_end;
+    }
 }
 
 sub output_cgs_cfg
@@ -857,140 +709,45 @@ sub param_present_if
 	return $ret;
 }
 
-sub output_hex_elf
+sub get_symbol_value
 {
-	my ($file, $sections, $entry) = @_;
-	my @output_sections;
-	$entry = 0 if !defined $entry;
-
-	$file =~ s/\.elf$/\.hex/;
-	open(my $HEX, '>', $file) or die "Cannot open $file for write: $!\n";
-	binmode $HEX;
-
-	foreach my $section (@{$sections}) {
-		next if $section->{sh_addr} >= 0x1000000;
-		next if $section->{sh_size} == 0;
-		next if (0 == ($section->{sh_flags} & 7)); # only code or data type
-		next if $section->{sh_type} != 1; # only PROGBITS, (fromelf mistakenly appends SRAM data from very different address range)
-		push @output_sections, $section;
-	}
-
-	@output_sections = sort { $a->{sh_addr} <=> $b->{sh_addr} } @output_sections;
-
-	foreach my $section (@output_sections) {
-		#printf "%d: %s: start %x len %x, end %x, data %d\n", $section->{index}, $section->{name}, $section->{sh_addr},
-		#		$section->{sh_size}, $section->{sh_addr} + $section->{sh_size}, length($section->{data});
-		# emit extended linear address record to start section
-		my $addr_hi = $section->{sh_addr} >> 16;
-		my $rec_addr = $section->{sh_addr} & 0xffff;
-		print $HEX hex_record(0, 4, sprintf("%04x",$addr_hi)), "\n";
-		for(my $i = 0; $i < $section->{sh_size}; $i += 16) {
-			my $chunk = 16;
-			$chunk = $section->{sh_size} - $i if ($section->{sh_size} - $i) < 16;
-			last if $chunk == 0;
-			my @bytes = unpack("C*",substr($section->{data}, $i, $chunk));
-			my $rec_data = "";
-			foreach my $byte (@bytes) {
-				$rec_data .= sprintf "%02x", $byte;
-			}
-			print $HEX hex_record($rec_addr & 0xffff, 0, $rec_data), "\n";
-			$rec_addr += 16;
-			if($rec_addr > 0xfffff) {
-				# emit extended linear address record
-				$addr_hi++;
-				print $HEX hex_record(0, 4, sprintf("%04x",$addr_hi)), "\n";
-				$rec_addr &= 0xffff;
-			}
-		}
-	}
-	# closing record
-	print $HEX hex_record(0, 5, sprintf("%02x%02x%02x%02x",
-		$entry & 0xff, ($entry >> 8) & 0xff, ($entry >> 16) & 0xff, ($entry >> 24) & 0xff)), "\n";
-	print $HEX hex_record(0, 1, ""), "\n";
-	close $HEX;
+	my ($symbol_entries, $name) = @_;
+	my $sym = find_symbol($symbol_entries, $name);
+	die "could not find symbol name \"$name\"\n" if !defined $sym;
+	return $sym->{st_value};
 }
 
-sub hex_record
+sub leb_128
 {
-	my ($addr, $type, $data) = @_;
-
-	my $record = sprintf "%02x%04x%02x", length($data)/2, $addr, $type;
-	$record .= $data;
-	my $checksum = 0;
-	$checksum += $_ for unpack('C*', pack("H*", $record));
-	my $hex_sum = sprintf "%04x", $checksum;
-	$hex_sum = substr($hex_sum, -2); # just save the last byte of sum
-	$checksum = (hex($hex_sum) ^ 0xFF) + 1; # 2's complement of hex_sum
-	$checksum &= 0xff;
-	$checksum = sprintf "%02x", $checksum; # convert checksum to string
-	$record = ":" . $record . $checksum;
-	return uc($record);
-}
-
-sub preview_sections
-{
-	my ($sections, $sorted_sections, $section_info, $direct_load) = @_;
-
-	# sort overlay sections to end
-	# move data sections prior to datagot and relo
-	my $setup_section;
-	my @overlay_sections;
-	my @nonoverlay_sections;
-	my @pie_sections;
-	my @non_pie_sections;
-	foreach my $section (@{$sections}) {
-		next if !defined $section->{name};
-		if( $section->{name} eq '.setup' && $direct_load) {
-			$setup_section = $section;
-			next;
+	my ($value) = @_;
+	my $accum = 0;
+	my $shift = 0;
+	while(1)
+	{
+		# process groups of 7 bits
+		my $group = $value & 0x7f;
+		$value >>= 7;
+		if($value) {
+			# set msb if not last encoded group
+			$group |= 0x80;
 		}
-		if($section->{name} =~ /^\._(\d)_/) {
-			# mark the section as overlay
-			$section->{'overlay_id'} = $1;
-			push @overlay_sections, $section;
-		}
-		else {
-			push @nonoverlay_sections, $section;
-		}
-		if($section->{sh_type} == 9 || $section->{sh_addr} >= 0xFF000000 || $section->{name} eq '.datagot') {
-			push @pie_sections, $section;
-		}
-		else {
-			push @non_pie_sections, $section;
-		}
-		# .app_xip_area will be merged into XIP Skip Block
-		if( $section->{name} eq '.app_xip_area') {
-			# note text start
-			$section_info->{'xip_text_start'} = $section->{sh_addr};
-			$section_info->{'xip_text_end'} = $section->{sh_addr} + $section->{sh_size};
-		}
-        if( $section->{name} eq '.app_xip_area_ds2') {
-            $section_info->{'ds2_xip_text_start'} = $section->{sh_addr};
-            $section_info->{'ds2_xip_text_end'} = $section->{sh_addr} + $section->{sh_size};
-        }
-        if( $section->{name} eq '.app_ram_area_ds2') {
-            $section_info->{'ds2_ram_start'} = $section->{sh_addr};
-            $section_info->{'ds2_ram_end'} = $section->{sh_addr} + $section->{sh_size};
-        }
+		# accumulate shifted group in next higher byte
+		$group <<= $shift;
+		$shift += 8;
+		$accum |= $group;
+		last if $value == 0;
 	}
-	if(scalar( @overlay_sections)) {
-		push @{$sorted_sections}, @nonoverlay_sections;
-		push @{$sorted_sections}, @overlay_sections;
-	}
-	else {
-		push @{$sorted_sections}, @non_pie_sections;
-		push @{$sorted_sections}, @pie_sections;
-	}
-	if(defined $sorted_sections) {
-		push @{$sorted_sections}, $setup_section;
-	}
+	return ($accum, $shift/8);
 }
 
 sub output_cgs_elf
 {
-	my ($file, $sections, $symbol_entries, $stringtable, $hdf, $entry2code, $entry_function, $direct_load) = @_;
-	my $xip_pie;
-	my $ds = 0x501400;
+	my ($file, $sections, $symbol_entries, $stringtable, $hdf, $entry2code,
+			$direct_load, $ds_start, $is_xip) = @_;
+
+	# there is at most one xip section and for gcc it is named .app_xip_area
+	# we need to wrap this into a "skip block" record
+	# the section is created with enough empty space at the start to fit the record header prior to code/data
 
 	# now process elf sections for cgs
 	my $seperator = "##############################################################################\n";
@@ -999,40 +756,71 @@ sub output_cgs_elf
 	print "# Patch code from \"$file\"\n";
 	print $seperator;
 
-	my $sorted_sections = [];
-	my $section_info = {};
-	preview_sections($sections, $sorted_sections, $section_info, $direct_load);
-
-	foreach my $section (@{$sorted_sections}) {
+	die "Need DS start \n" if !defined $ds_start;
+	my $address_appending_to = ($ds_start + 12 + 16);
+	my $index = -1;
+	foreach my $section (@{$sections}) {
+		$index++;
 		next if ($section->{sh_type} != 1 && $section->{sh_type} != 6 && $section->{sh_type} != 9); # PROGBITS
 		next if !($section->{sh_flags} & 3); # attributes off (!write, !alloc, !exec)
 		next if $section->{sh_size} == 0;
 		next if !defined $section->{name};
-		next if $section->{sh_addr} > 0x81000000 &&  $section->{sh_type} != 9;
-		next if $section->{name} eq '.app_xip_area';
-        next if $section->{name} eq '.app_xip_area_ds2';
-        next if $section->{name} eq '.app_ram_area_ds2';
-		$section->{'name'} = $stringtable->{$section->{sh_name}} if !defined $section->{name};
 
-		#warn sprintf "read section % 20s with %04x bytes addr %08x offset %08x flags %x type %x\n",
-		#			$section->{name}, $section->{sh_size},
-		#			$section->{sh_addr}, $section->{sh_offset}, $section->{sh_flags}, $section->{sh_type};
+	#	warn sprintf "read section % 20s with %04x bytes addr %08x offset %08x flags %x type %x\n",
+	#				$section->{name}, $section->{sh_size},
+	#				$section->{sh_addr}, $section->{sh_offset}, $section->{sh_flags}, $section->{sh_type};
+
+		# handle xip in skip blocks, this block has a very large data size: uint8[0xFFFFFF00]
+		# so no need to break into chunks
+		if($section->{name} eq '.app_xip_area') {
+			# wrap xip sections in 'Skip Block'
+			my $name = "Skip Block";
+			my $block_start = get_symbol_value($symbol_entries, 'app_xip_area_block_start');
+			my $data_start = get_symbol_value($symbol_entries, 'app_xip_area_begin');
+			my $block_end = get_symbol_value($symbol_entries, 'app_xip_area_end');
+			my ($leb_val, $leb_bytes) = leb_128($block_end - $block_start);
+			my $skip_section_header_len = 2 + $leb_bytes;
+			my $skip_addr = $address_appending_to + $skip_section_header_len + 4;
+			my $data = pack "L", $skip_addr;
+			# trim data to allow 2 bytes type plus leb128 coded length plus address
+			my $data_start_offset = $data_start - $block_start;
+			my $hex_data_start_offset = $data_start - $skip_addr; 
+			my $data_trim = $data_start_offset - $hex_data_start_offset;
+			$data .= substr($section->{data}, $data_trim);
+			my $comment = sprintf "%s trim %d block_start 0x%08x data_start 0x%08x block_end 0x%08x offset 0x%08x from %s",
+							$section->{name}, $data_trim,
+							$block_start, $data_start, $block_end, $address_appending_to, $file;
+			output_hdf_cfg_command($section->{name}, $comment, $hdf->{$entry2code->{$name}}, $data, 1, $direct_load);
+			$address_appending_to += length($data) + $skip_section_header_len;
+			next;
+		}
+		# treat armlink elf a little diferent
+		elsif($section->{name} eq 'APP_XIP_AREA') {
+			# wrap xip sections in 'Skip Block'
+			my $name = "Skip Block";
+			my $block_start = $address_appending_to;
+			my $data_start = $block_start + 12;
+			my $block_end = $block_start + length($section->{data});
+			my ($leb_val, $leb_bytes) = leb_128($block_end - $block_start);
+			my $skip_section_header_len = 2 + $leb_bytes;
+			my $skip_addr = $address_appending_to + $skip_section_header_len + 4;
+			my $data = pack "L", $skip_addr;
+			my ($stuff) = pack "C", 0;
+			$data .= $stuff x ($data_start - $skip_addr);
+			$data .= $section->{data};
+			my $comment = sprintf "%s trim %d block_start 0x%08x data_start 0x%08x block_end 0x%08x offset 0x%08x from %s",
+							$section->{name}, $data_trim,
+							$block_start, $data_start, $block_end, $address_appending_to, $file;
+			output_hdf_cfg_command($section->{name}, $comment, $hdf->{$entry2code->{$name}}, $data, 1, $direct_load);
+			$address_appending_to += length($data) + $skip_section_header_len;
+			next;
+		}
 
 		# handle sections in 0xff00 chunks
 		my $offset = 0;
 		while($offset < length($section->{data})) {
 			my $name = "Data";
 			my $data = pack "L", $section->{sh_addr} + $offset;
-			if( defined $section->{overlay_id}) {
-				$name = "Overlay data";
-				#my ($d1, $d2, $d3, $d4) = unpack "CCCC", $section->{data};
-				#warn sprintf "overlay index %x, addr %x, data %x %x %x %x\n", $section->{overlay_id}, $section->{sh_addr}, $d1, $d2, $d3, $d4;
-				$data = pack "L", $section->{overlay_id};
-				$data .= pack "L", $section->{sh_addr} + $offset;
-			}
-			elsif($section->{name} eq '.aon') {
-				$name = "AON Data";
-			}
 			my $chunk = length($section->{data}) - $offset;
 			$chunk = 0xff00 if $chunk > 0xff00;
 			$data .= substr($section->{data}, $offset, $chunk);
@@ -1040,23 +828,6 @@ sub output_cgs_elf
 			output_hdf_cfg_command($section->{name}, "$section->{name} from $file", $hdf->{$entry2code->{$name}}, $data, 1, $direct_load);
 		}
 	}
-
-    if (defined $entry_function) {
-        print "\n";
-        print $seperator;
-        print "# Also call entry function $entry_function\n";
-        print $seperator;
-        foreach my $sym (@{$symbol_entries}) {
-            my $name = $sym->{name};
-            next if !defined $name;
-            next if(($sym->{st_info} & 0xf) != 2 ); # only function type symbols
-            next if $name ne $entry_function;
-            my $data = pack "L", $sym->{st_value};
-            my $entry_name = 'Function Call';
-            output_hdf_cfg_command($sym, undef, $hdf->{$entry2code->{$entry_name}}, $data);
-            last;
-        }
-    }
 }
 
 sub parse_hdf
