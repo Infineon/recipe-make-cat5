@@ -454,7 +454,7 @@ sub process_sections
     $section_name_lut->{'.app_xip_area'}->{start} = $param->{app_xip_start} if defined $param->{app_xip_start};
 
     # move common text and data section matches to app_xip_area if needed
-    if(defined $param->{XIP_DS_OFFSET} || defined $param->{xip_app}) {
+    if(defined $param->{XIP_DS_OFFSET_FLASH_APP} || defined $param->{xip_app}) {
         my @section_matches = @{$section_name_lut->{'.text'}->{match}};
         $section_name_lut->{'.text'}->{match} = [];
         # move input sections from ram to app_xip_area
@@ -546,7 +546,7 @@ sub process_sections
     else {
         # build the text for the scatter file based loosely on the ld file section_lut data structure
         # add some general matches for ARM scatter file sections
-        if(defined $param->{XIP_DS_OFFSET} || defined $param->{xip_app}) {
+        if(defined $param->{XIP_DS_OFFSET_FLASH_APP} || defined $param->{xip_app}) {
             push @{$section_name_lut->{'.app_xip_area'}->{match}}, '* (+RO)';
         }
         else {

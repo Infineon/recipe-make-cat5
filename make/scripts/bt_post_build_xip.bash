@@ -327,7 +327,16 @@ CY_APP_DIRECT_LOAD="DIRECT_LOAD=1"
 fi
 # generate the linker script
 if [[ $TOOLCHAIN = "ARM" ]]; then
+  if [[ $CY_APP_BUILD_EXTRAS = *"_FLASHPATCH_"* ]]; then
+    # need all types (CODE + RO + RW + ZI) minus XIP (APP_XIP_DATA)
+    APP_IRAM_LENGTH_RW=$("${CY_TOOL_PERL}" -ne 'printf("0x%X", $1) if /Total RW\s+Size .* (\d+) /' "${CY_APP_MAP}")
+    APP_IRAM_LENGTH_RO=$("${CY_TOOL_PERL}" -ne 'printf("0x%X", $1) if /Total RO\s+Size .* (\d+) /' "${CY_APP_MAP}")
+    APP_XIP_LENGTH=$("${CY_TOOL_PERL}" -ne 'print $1 if /Execution Region APP_XIP_AREA .* Size: (0x[0-9a-fA-F]+),/' "${CY_APP_MAP}")
+    APP_IRAM_LENGTH=$(printf 0x%X $((${APP_IRAM_LENGTH_RW} + ${APP_IRAM_LENGTH_RO} - ${APP_XIP_LENGTH})))
+  fi
+  if [[ $CY_APP_BUILD_EXTRAS = *"_FLASHAPP_"* ]]; then
     APP_IRAM_LENGTH=$("${CY_TOOL_PERL}" -ne 'printf("0x%X", $1) if /Total RW\s+Size .* (\d+) /' "${CY_APP_MAP}")
+  fi
 else
     APP_IRAM_LENGTH=$("${CY_TOOL_PERL}" -ne 'print "$1" if /(0x[0-9a-f]+)\s+app_iram_length/' "${CY_APP_MAP}")
 fi

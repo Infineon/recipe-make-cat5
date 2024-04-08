@@ -17,6 +17,11 @@ This release of the CYW55513 GNU make build recipe includes complete support for
 This also includes the getlibs.bash script that can be used directly, or via the make target to download additional git repo based libraries for the application.
 
 ### What Changed?
+
+#### v1.2.1
+* Fixed a bug causing image to not boot from RAM
+* Fixed a bug causing incorrect XIP alignment
+
 #### v1.2.0
 * CYW55513 device support added
 
