@@ -39,6 +39,9 @@
             "servertype": "jlink",
             "device": "&&_MTB_RECIPE__JLINK_DEVICE_CFG&&",
             "interface": "jtag",
+            "overrideAttachCommands": [
+                "set *0xE000EDFC=(*0xE000EDFC|0x10000)" // Set DEMCR.MON_EN
+            ],
             "overrideRestartCommands": [
             ],
             "showDevDebugOutput": "none"

@@ -170,11 +170,11 @@ else
     #Download FW
     if($direct_load == 1) {
         print "$chip_load -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -BAUDRATE $detected_baud -BTP $btp_file -NOERASE -CONFIG $config_file ${addl_flags}\n";
-        qx{"$chip_load" -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -BAUDRATE $detected_baud -BTP "${btp_file}" -NOERASE -CONFIG ${config_file} -LOGTO "$download_log_path" ${addl_flags}};
+        system("$chip_load -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -BAUDRATE $detected_baud -BTP ${btp_file} -NOERASE -CONFIG ${config_file} ${addl_flags} -LOGTO $download_log_path");
     }
     else {
         print "$chip_load -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -LAUNCHADDRESS 0x00000000 -BAUDRATE $detected_baud -NOVERIFY -MINIDRIVER ${mini_driver} -BTP ${btp_file} -CONFIG $config_file ${addl_flags}\n";
-        qx{"$chip_load" -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -LAUNCHADDRESS 0x00000000 -BAUDRATE $detected_baud -NOVERIFY -MINIDRIVER "${mini_driver}" -BTP "${btp_file}" -CONFIG ${config_file} -LOGTO "$download_log_path" ${addl_flags}};
+        system("$chip_load -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -LAUNCHADDRESS 0x00000000 -BAUDRATE $detected_baud -NOVERIFY -MINIDRIVER ${mini_driver} -BTP ${btp_file} -CONFIG ${config_file} ${addl_flags} -LOGTO $download_log_path");
     }
     exit ($? >> 8);
 }

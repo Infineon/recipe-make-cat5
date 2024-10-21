@@ -52,15 +52,6 @@ use File::Basename;
 
 # create default descriptions of sections for linker script
 my @section_lut = (
-    {   name => '.app_xip_area',
-        start => 0, # linker will sometimes misalign first opcode without this
-        align => 4,
-        pre => ['app_xip_area_block_start = .;', '. += 12;', 'app_xip_area_begin = .;'],
-        match => ['*(.cy_xip)', '*(.cy_xip.*)'],
-        post => ['app_xip_area_end = .;'],
-        memory => 'xip',
-        memtype => 0, section_type => 0,
-    },
     {   name => '.bss',
         align => 4,
         pre => ['app_iram_bss_begin = .;'],
@@ -73,7 +64,7 @@ my @section_lut = (
         align => 8,
         match => ['KEEP(*(.noinit))'],
         noload => 1,
-        noinit => 1,
+        uninit => 1,
         memory => 'ram',
         memtype => 2, section_type => 8,
     },
@@ -92,7 +83,7 @@ my @section_lut = (
     },
     {   name => '.data',
         pre => ['app_iram_data_begin = .;'],
-        match => ['*(.data)', '*(.data.*)', '*(.gnu.linkonce.d.*)'],
+        match => [],
         post => ['app_iram_data_end = .;'],
         memory => 'ram',
         memtype => 2, section_type => 3,
@@ -114,12 +105,11 @@ my @section_lut = (
     {   name => '.heap',
         noload => 1,
         empty => 1,
-        uninit => 1,
         align => 8,
         heap => 0,
         pre => ['. = ALIGN(8);', '__HeapBase = .;', '__end1__ = .;', 'end = __end1__;'],
         match => ['KEEP(*(.heap*))'],
-        post =>['__HeapLimit = .;'], # prepend ". += HEAP_SIZE;" when it is known
+        post =>['. += MTB_LINKSYM_APP_HEAP_SIZE;', '__HeapLimit = .;'],
         memory => 'ram',
         memtype => 2, section_type => 7,
     },
@@ -132,21 +122,72 @@ my @section_lut = (
     },
     {   name => '.text',
         pre => ['app_text_block_start = .;', 'app_text_begin = .;'],
-        match => [
-            '*(.text)',
-            '*(.text.*)',
-            '*(.gnu.linkonce.t.*)',
-            '*(.emb_text)',
-            '*(.text_in_ram)',
-            '*(.cy_ramfunc)'],
-        post =>['app_text_end = .;'],
+        match => [],
+        post =>['/* DO NOT EDIT: add module select patterns for *.o to be located in RAM below */',
+                'app_text_end = .;'],
         memory => 'ram',
         memtype => 2, section_type => 1,
+    },
+    {   name => '.psram',
+        start => MTB_LINKSYM_APP_PSRAM_START,
+        align => 32,
+        pre => ['app_psram_block_start = .;', 'app_psram_begin = .;'],
+        match => ['*(.cy_psram_func)'],
+        post =>['. = ALIGN(32);', 'app_psram_data_begin = .;', 'KEEP(*(.cy_psram_data))', '. = ALIGN(32);', 'app_psram_end = .;'],
+        memory => 'psram',
+        memtype => 0, section_type => 0,
+    },
+    {   name => '.app_xip_area',
+        start => 'MTB_LINKSYM_APP_XIP_START', # linker will sometimes misalign first opcode without this
+        align => 4,
+        pre => ['app_xip_area_block_start = .;', '. += 12;', 'app_xip_area_begin = .;'],
+        match => ['*(.cy_xip)', '*(.cy_xip.*)',
+                  'KEEP(*(.cy_xip_data))', 'KEEP(*(.cy_xip_data.*))'],
+        post => ['app_xip_area_end = .;'],
+        memory => 'xip',
+        memtype => 0, section_type => 1,
     },
     {   name => '.log_section', # try /DISCARD/
         match => ['KEEP(*(log_data))'],
         memory => 'log_section',
         memtype => 99, section_type => 99,
+    },
+);
+my @region_lut = (
+    {
+        name => 'ram_pre_init',
+        param_start => 'MTB_LINKSYM_PRE_INIT_CFG',
+        length => '4',
+        type => 'r',
+        sort => 0,
+    },
+    {
+        name => 'ram',
+        param_start => 'MTB_LINKSYM_APP_SRAM_START',
+        param_length => 'MTB_LINKSYM_APP_SRAM_LENGTH',
+        type => 'rwx',
+        sort => 1,
+    },
+    {
+        name => 'psram',
+        param_start => 'MTB_LINKSYM_APP_PSRAM_START',
+        param_length => 'MTB_LINKSYM_APP_PSRAM_LENGTH',
+        type => 'rwx',
+        sort => 2,
+    },
+    {
+        name => 'xip',
+        param_start => 'MTB_LINKSYM_APP_XIP_START',
+        param_length => 'MTB_LINKSYM_APP_XIP_LENGTH',
+        type => 'rx',
+        sort => 3,
+    },
+    {
+        name => 'log_section',
+        start => '0x81000004',
+        length => '0x100000',
+        type => 'r',
+        sort => 99
     },
 );
 
@@ -227,6 +268,23 @@ sub process_args
         process_sym($args->{sym}, $db) ;
     }
 
+    # remove all but ram region and sections for DIRECT_LOAD
+    if(defined $args->{DIRECT_LOAD} && $args->{DIRECT_LOAD}) {
+        my @region_lut_filtered;
+        foreach my $r (@region_lut) {
+            next if $r->{name} eq 'xip';
+            next if $r->{name} eq 'psram';
+            push @region_lut_filtered, $r;
+        }
+        @region_lut = @region_lut_filtered;
+        my @section_lut_filtered;
+        foreach my $s (@section_lut) {
+            next if $s->{name} eq '.app_xip_area';
+            next if $s->{name} eq '.psram';
+            push @section_lut_filtered, $s;
+        }
+        @section_lut = @section_lut_filtered;
+    }
     # use patch symbols to find start of app memory region
     my $sections = $db->{patch_sections};
     if( defined $sections->{POST_INIT_SECTION_IN_SRAM}->{sh_addr} &&
@@ -257,6 +315,7 @@ sub process_args
         my $mpaf_data_area_section;
         if (defined $sections->{MPAF_SRAM_AREA}) {
             $mpaf_data_area_section = $sections->{MPAF_SRAM_AREA};
+            $empty_mpaf_data_offset = 0x80; # pad for alignment adjustments
         }
         elsif (defined $sections->{mpaf_data_area}) {
             $mpaf_data_area_section = $sections->{mpaf_data_area};
@@ -297,6 +356,11 @@ sub process_args
         next if defined $param->{$key};
         $param->{$key} = $args->{$key};
     }
+
+    # default code location for XIP=1/0/-, PSRAM=1/0/-
+    $param->{'DEFAULT_CODE_LOCATION'} = (defined $args->{DEFAULT_CODE_LOCATION}) ?
+            $args->{DEFAULT_CODE_LOCATION} : 'RAM';
+
     # various xip settings:
     #   flash offset to start structure containing app xip (DS)
     #   type of xip
@@ -313,6 +377,13 @@ sub process_args
         $param->{'xip'} = 1;
     }
 
+    # find whether to use PSRAM
+    if(defined $args->{PSRAM_ADDR}  && defined $args->{PSRAM_LEN}) {
+        $param->{'PSRAM_ADDR'} = hex($args->{PSRAM_ADDR});
+        $param->{'PSRAM_LEN'} = hex($args->{PSRAM_LEN});
+        $param->{'psram'} = 1;
+    }
+
     # override ConfigDSLocation if DS_LOCATION provided on command line
     if((defined $param->{ConfigDSLocation} || $param->{xip} || $param->{xip_flash_patch}) && defined $param->{DS_LOCATION}) {
         $param->{'ConfigDSLocation'} = hex($param->{DS_LOCATION});
@@ -320,18 +391,6 @@ sub process_args
 
     # get numeric value of heap size
     $param->{HEAP_SIZE} = hex($args->{HEAP_SIZE});
-
-    # add section input matches passed on command line as comma delimited list with escapes like "\(" and "\)"
-    my @section_match_args = ('ADD_XIP', 'ADD_RAM_CODE', 'ADD_RAM_DATA');
-    foreach my $add (@section_match_args) {
-        next if !defined $args->{$add};
-        $args->{$add} =~ s/\,/ /g;
-        $args->{$add} =~ s/\\\(/\(/g;
-        $args->{$add} =~ s/\\\)/\)/g;
-        $param->{'add_xip_matches'} = $args->{ADD_XIP} if $add eq 'ADD_XIP';
-        $param->{'add_ram_code_matches'} = $args->{ADD_RAM_CODE} if $add eq 'ADD_RAM_CODE';
-        $param->{'add_ram_data_matches'} = $args->{ADD_RAM_DATA} if $add eq 'ADD_RAM_DATA';
-    }
 }
 
 # the first lines common to all cat5 linker scripts
@@ -341,10 +400,11 @@ sub process_header
     if($db->{params}->{linker_script_type} eq 'gcc') {
         push @{$db->{header}}, "OUTPUT_FORMAT (\"elf32-littlearm\", \"elf32-bigarm\", \"elf32-littlearm\")";
         push @{$db->{header}}, "SEARCH_DIR(.)";
+        push @{$db->{header}}, "GROUP(-lgcc -lc -lnosys -lstdc++ -lm)";
         push @{$db->{header}}, "\n";
     }
     else {
-#        push @{$db->{header}}, "#! armclang -E  --target=arm-arm-none-eabi -x c -mcpu=cortex-m33 -march=armv8-m.main";
+        push @{$db->{header}}, "#! armclang -E  --target=arm-arm-none-eabi -x c -mcpu=cortex-m33";
         push @{$db->{header}}, "; The first line specifies a preprocessor command that the linker invokes";
         push @{$db->{header}}, "; to pass a scatter file through a C preprocessor.";
     }
@@ -357,32 +417,49 @@ sub process_comments
     my $param = $db->{params};
     my @comments;
 
-    push @comments, "Boilerplate comment info";
-    push @comments, sprintf "pram_patch_begin=0x%08X pram_patch_end=0x%08X pram_end=0x%08X",
-                                $param->{patch_code_start},
-                                $param->{patch_code_extent},
-                                $param->{patch_code_end};
-    push@comments, sprintf "ram_patch_begin=0x%08X ram_patch_end=0x%08X",
-                                $param->{app_sram_start},
-                                $param->{app_sram_end};
-    push@comments, sprintf "FLASH0_BEGIN_ADDR=0x%08X FLASH0_LENGTH=0x%08X",
-                                    hex($param->{FLASH0_BEGIN_ADDR}), hex($param->{FLASH0_LENGTH});
-    push @comments, sprintf "FLASH0_SS=0x%08X", $param->{DLConfigSSLocation};
-    push @comments, sprintf "FLASH0_VS=0x%08X", $param->{DLConfigVSLocation};
-    push @comments, sprintf "FLASH0_DS=0x%08X", $param->{ConfigDSLocation};
-    push @comments, sprintf "HEAP_SIZE=0x%08X", $param->{HEAP_SIZE};
+    push @comments, "This generated linker script template builds ";
+    push @comments, "The template makes use of preprocessor values passed on the linker command line";
+    push @comments, "";
+    push @comments, "Example:";
+    push @comments, "  MTB_LINKSYM_PRE_INIT_CFG:    location of firmware pointer to pre_init_cfg structure defined in spar_sdetup.c";
+    push @comments, "  MTB_LINKSYM_APP_SRAM_START:  start address of application in static RAM";
+    push @comments, "  MTB_LINKSYM_APP_SRAM_LENGTH: length of memory region for application in RAM, including HEAP";
+    push @comments, "  MTB_LINKSYM_APP_HEAP_SIZE:   number of bytes in HEAP";
+    if(defined $param->{psram}) {
+        push @comments, "  MTB_LINKSYM_APP_PSRAM_START: start address of application in PSRAM, configured as 0x02800000";
+        push @comments, "  MTB_LINKSYM_APP_PSRAM_LENGTH:number of bytes of application memory in PSRAM";
+    }
+    if(defined $param->{xip} || defined $param->{xip_app} || defined $param->{xip_flash_patch}) {
+        push @comments, "  MTB_LINKSYM_APP_XIP_START:   start address of application eXecute-In-Place in flash";
+        push @comments, "  MTB_LINKSYM_APP_XIP_LENGTH:  number of bytes available for flash XIP";
+    }
+    push @comments, "";
 
     if($param->{linker_script_type} eq 'gcc') {
         foreach my $comment (@comments) {
-            push @{$db->{comments}}, "/* $comment */";
+            push(@{$db->{comments}}, $comment) if length($comment) == 0;
+            push(@{$db->{comments}}, "/* $comment */") if length($comment) != 0;
         }
     }
     else {
         foreach my $comment (@comments) {
-            push @{$db->{comments}}, "; $comment";
+            push(@{$db->{comments}}, $comment) if length($comment) == 0;
+            push(@{$db->{comments}}, "; $comment") if length($comment) != 0;
         }
     }
     push @{$db->{comments}}, "";
+}
+
+sub predefine_linker_param
+{
+    my ($db, $name, $defs) = @_;
+    my $param = $db->{params};
+    if($param->{linker_script_type} eq 'gcc') {
+        push @{$defs}, sprintf("%s = DEFINED(%s) ? %s : FIXME;", $name, $name, $name);
+    }
+    else {
+        push @{$defs}, sprintf("#if !defined(%s)\n\t#define %s FIXME\n#endif", $name, $name);
+    }
 }
 
 # defines in cat5 linker scripts
@@ -390,6 +467,30 @@ sub process_comments
 sub process_definitions
 {
     my ($db) = @_;
+    my $param = $db->{params};
+    my @defs;
+
+    # give default values to the parameterized start address and lengths
+    foreach my $region (@region_lut) {
+        predefine_linker_param($db, $region->{param_start} ,\@defs) if defined $region->{param_start};
+        predefine_linker_param($db, $region->{param_length} ,\@defs) if defined $region->{param_length};
+    }
+    foreach my $def (@defs) {
+        push @{$db->{definitions}}, $def;
+    }
+    push @{$db->{definitions}}, "\n";
+}
+
+sub linker_param_set_default
+{
+    my ($db, $name, $value) = @_;
+    my $val = sprintf("0x%08X", $value);
+    foreach my $def (@{$db->{definitions}}) {
+        next unless $def =~ /$name/;
+        next unless $def =~ /FIXME/;
+        $def =~ s/FIXME/$val/;
+        last;
+    }
 }
 
 # memory/load regions in cat5 linker scripts
@@ -402,26 +503,39 @@ sub process_memory_regions
 
     # create records for memory types
     $param->{'memories'} = [];
-    if(defined $param->{XIP_DS_OFFSET} || defined $param->{xip_flash_patch} || defined $param->{xip_app}) {
-        $start = $param->{ConfigDSLocation} + $param->{XIP_DS_OFFSET};
-        $param->{'app_xip_start'} = $start;
-        $len = hex($param->{XIP_LEN});
-        $len = $param->{FLASH0_LENGTH} - ($start - $param->{ConfigDSLocation}) if !defined $len;
-        push @{$param->{memories}}, { name => 'xip', type => 'rx', start => $start, length => $len};
+    @region_lut = sort { $a->{sort} <=> $b->{sort} } @region_lut;
+    foreach my $region (@region_lut)
+    {
+        if($region->{name} eq 'xip') {
+            $start = $param->{ConfigDSLocation} + $param->{XIP_DS_OFFSET};
+            $param->{'app_xip_start'} = $start;
+            $len = hex($param->{XIP_LEN});
+            $len = $param->{FLASH0_LENGTH} - ($start - $param->{ConfigDSLocation}) if !defined $len;
+            linker_param_set_default($db, $region->{param_start}, $start);
+            linker_param_set_default($db, $region->{param_length}, $len);
+        }
+        elsif($region->{name} eq 'psram') {
+            linker_param_set_default($db, $region->{param_start}, $param->{PSRAM_ADDR});
+            linker_param_set_default($db, $region->{param_length}, $param->{PSRAM_LEN});
+        }
+        elsif($region->{name} eq 'ram_pre_init') {
+            $start = $db->{patch_sections}->{APP_PRE_INIT_CFG}->{sh_addr};
+            linker_param_set_default($db, $region->{param_start}, $start);
+        }
+        elsif($region->{name} eq 'ram') {
+            linker_param_set_default($db, $region->{param_start}, $param->{app_sram_start});
+            linker_param_set_default($db, $region->{param_length}, $param->{app_sram_len});
+        }
+        $region->{'start'} = $region->{param_start} if !defined $region->{start} && defined $region->{param_start};
+        $region->{'length'} = $region->{param_length} if !defined $region->{length} && defined $region->{param_length};
+        push @{$param->{memories}}, $region;
     }
-
-    # all cat5 builds use pre_init_cfg pointer
-    $start = $db->{patch_sections}->{APP_PRE_INIT_CFG}->{sh_addr};
-    push @{$param->{memories}}, { name => 'ram_pre_init', type => 'r', start => $start, length => 4};
-    push @{$param->{memories}}, { name => 'ram', type => 'rwx', start => $param->{app_sram_start}, length => $param->{app_sram_len}};
-    push @{$param->{memories}}, { name => 'log_section', type => 'r', start => 0x81000004, length => 0x100000};
-
     if($param->{linker_script_type} eq 'gcc') {
         push @{$db->{memory_regions}}, "MEMORY";
         push @{$db->{memory_regions}}, "{";
 
         foreach my $memory (@{$param->{memories}}) {
-            push @{$db->{memory_regions}}, sprintf "\t%s (%s) : ORIGIN = 0x%X, LENGTH = 0x%X",
+            push @{$db->{memory_regions}}, sprintf "\t%s (%s) : ORIGIN = %s, LENGTH = %s",
                             $memory->{name}, $memory->{type}, $memory->{start}, $memory->{length};
         }
         push @{$db->{memory_regions}}, "}\n";
@@ -450,17 +564,77 @@ sub process_sections
     foreach my $section (@section_lut) {
         $section_name_lut->{$section->{name}} = $section;
     }
-    # set start address for .app_xip_area if needed
-    $section_name_lut->{'.app_xip_area'}->{start} = $param->{app_xip_start} if defined $param->{app_xip_start};
-
+    
+    if($param->{linker_script_type} eq 'gcc') {
+        $section_name_lut->{'.text'}->{match} = 
+            [
+            'KEEP(*(.vectors))',
+            '*(.text)',
+            '*(.text.*)',
+            '. = ALIGN(4);',
+            'KEEP(*(.init))',
+            'KEEP(*(.fini))',
+            'KEEP(*crtbegin.o(.ctors))',
+            'KEEP(*crtbegin?.o(.ctors))',
+            'KEEP(*(EXCLUDE_FILE(*crtend?.o *crtend.o) .ctors))',
+            'KEEP(*(SORT(.ctors.*)))',
+            'KEEP(*(.ctors))',
+            '*crtbegin.o(.dtors)',
+            '*crtbegin?.o(.dtors)',
+            '*(EXCLUDE_FILE(*crtend?.o *crtend.o) .dtors)',
+            '*(SORT(.dtors.*))',
+            '*(.dtors)',
+            '*(.gnu.linkonce.t.*)',
+            '*(.emb_text)',
+            '*(.text_in_ram)',
+            '*(.cy_ramfunc)'];
+        
+        $section_name_lut->{'.data'}->{match} =
+            [
+            '*(vtable)',
+            '*(.data)',
+            '*(.data.*)',
+            '*(.gnu.linkonce.d.*)',
+            '. = ALIGN(4);',
+            'PROVIDE_HIDDEN (__preinit_array_start = .);',
+            'KEEP(*(.preinit_array))',
+            'PROVIDE_HIDDEN (__preinit_array_end = .);',
+            '. = ALIGN(4);',
+            'PROVIDE_HIDDEN (__init_array_start = .);',
+            'KEEP(*(SORT(.init_array.*)))',
+            'KEEP(*(.init_array))',
+            'PROVIDE_HIDDEN (__init_array_end = .);',
+            '. = ALIGN(4);',
+            'PROVIDE_HIDDEN (__fini_array_start = .);',
+            'KEEP(*(SORT(.fini_array.*)))',
+            'KEEP(*(.fini_array))',
+            'PROVIDE_HIDDEN (__fini_array_end = .);',
+            'KEEP(*(.jcr*))',
+            '. = ALIGN(4);'
+        ];
+    }
+    else
+    {
+        $section_name_lut->{'.text'}->{match} = [
+            '*(.text)',
+            '*(.text.*)',
+            '*(.gnu.linkonce.t.*)',
+            '*(.emb_text)',
+            '*(.text_in_ram)',
+            '*(.cy_ramfunc)'
+        ];
+        $section_name_lut->{'.data'}->{match} = ['*(.data)', '*(.data.*)', '*(.gnu.linkonce.d.*)'];
+    }
+    
     # move common text and data section matches to app_xip_area if needed
-    if(defined $param->{XIP_DS_OFFSET_FLASH_APP} || defined $param->{xip_app}) {
+    if($param->{DEFAULT_CODE_LOCATION} eq 'FLASH' || $param->{DEFAULT_CODE_LOCATION} eq 'PSRAM') {
         my @section_matches = @{$section_name_lut->{'.text'}->{match}};
         $section_name_lut->{'.text'}->{match} = [];
-        # move input sections from ram to app_xip_area
+        # move input sections from ram to app_xip_area or psram
+        my $destination_section = ($param->{DEFAULT_CODE_LOCATION} eq 'PSRAM') ? '.psram' : '.app_xip_area';
         foreach my $section_match (@section_matches) {
-            if($section_match =~ /(text|linkonce\.t)/ && $section_match !~ /ram/) {
-                push @{$section_name_lut->{'.app_xip_area'}->{match}}, $section_match;
+            if($section_match =~ /(text|linkonce\.t|\.init|\.fini)/ && $section_match !~ /ram/) {
+                push @{$section_name_lut->{$destination_section}->{match}}, $section_match;
             }
             else {
                 push @{$section_name_lut->{'.text'}->{match}}, $section_match;
@@ -470,7 +644,7 @@ sub process_sections
         $section_name_lut->{'.rodata'}->{match} = [];
         foreach my $section_match (@section_matches) {
             if($section_match =~ /(rodata|constdata|linkonce\.r)/) {
-                push @{$section_name_lut->{'.app_xip_area'}->{match}}, $section_match;
+                push @{$section_name_lut->{$destination_section}->{match}}, $section_match;
             }
             else {
                 push @{$section_name_lut->{'.rodata'}->{match}}, $section_match;
@@ -480,7 +654,7 @@ sub process_sections
         $section_name_lut->{'.ARM.extab'}->{match} = [];
         foreach my $section_match (@section_matches) {
             if($section_match =~ /(extab|linkonce\.armextab)/) {
-                push @{$section_name_lut->{'.app_xip_area'}->{match}}, $section_match;
+                push @{$section_name_lut->{$destination_section}->{match}}, $section_match;
             }
             else {
                 push @{$section_name_lut->{'.ARM.extab'}->{match}}, $section_match;
@@ -490,7 +664,7 @@ sub process_sections
         $section_name_lut->{'.ARM.exidx'}->{match} = [];
         foreach my $section_match (@section_matches) {
             if($section_match =~ /(exidx|linkonce\.armexidx)/) {
-                push @{$section_name_lut->{'.app_xip_area'}->{match}}, $section_match;
+                push @{$section_name_lut->{$destination_section}->{match}}, $section_match;
             }
             else {
                 push @{$section_name_lut->{'.ARM.exidx'}->{match}}, $section_match;
@@ -498,20 +672,9 @@ sub process_sections
         }
     }
 
-    # add section input matches passed on command line
-    if(defined $param->{add_xip_matches}) {
-        push @{$section_name_lut->{'.app_xip_area'}->{match}}, $param->{add_xip_matches};
-    }
-    if(defined $param->{add_ram_code_matches}) {
-        push @{$section_name_lut->{'.text'}->{match}}, $param->{add_ram_code_matches};
-    }
-    if(defined $param->{add_ram_data_matches}) {
-        push @{$section_name_lut->{'.data'}->{match}}, $param->{add_ram_data_matches};
-    }
-
     # fix heap size
-    unshift @{$section_name_lut->{'.heap'}->{post}}, sprintf ". += 0x%x;", $param->{HEAP_SIZE};
     $section_name_lut->{'.heap'}->{'fixed_size'} = $param->{HEAP_SIZE} if $param->{HEAP_SIZE} > 0;
+    $section_name_lut->{'.heap'}->{'param_length'} = "MTB_LINKSYM_APP_HEAP_SIZE";
 
     # record section text
     if($param->{linker_script_type} eq 'gcc') {
@@ -520,11 +683,10 @@ sub process_sections
 
         foreach my $section (@section_lut) {
             # skip xip section if there is no xip memory region
-            next if $section->{name} eq '.app_xip_area' && $section->{start} == 0;
             # mark a place to add linker symbol definitions
             push(@{$db->{sections}}, "__INSERT_PRE_INIT_CFG_CALCS__") if $section->{name} eq '.log_section';
             my $txt = "\t$section->{name}";
-            $txt .= sprintf(" 0x%08x", $section->{start}) if defined $section->{start};
+            $txt .= " $section->{start}" if defined $section->{start};
             $txt .= " : ";
             $txt .= sprintf("ALIGN(%d)", $section->{align}) if defined $section->{align};
             push @{$db->{sections}}, $txt;
@@ -546,56 +708,85 @@ sub process_sections
     else {
         # build the text for the scatter file based loosely on the ld file section_lut data structure
         # add some general matches for ARM scatter file sections
-        if(defined $param->{XIP_DS_OFFSET_FLASH_APP} || defined $param->{xip_app}) {
+        if($param->{DEFAULT_CODE_LOCATION} eq 'FLASH') {
             push @{$section_name_lut->{'.app_xip_area'}->{match}}, '* (+RO)';
         }
+        elsif($param->{DEFAULT_CODE_LOCATION} eq 'PSRAM') {
+            push @{$section_name_lut->{'.psram'}->{match}}, '* (+RO)';
+        }
         else {
-            push @{$section_name_lut->{'.text'}->{match}}, '* (+RO-CODE)';
+            push @{$section_name_lut->{'.text'}->{match}}, '* (+RO)';
         }
         push @{$section_name_lut->{'.app_entry'}->{match}}, '*spar_setup.o(+RO)';
         push @{$section_name_lut->{'.bss'}->{match}}, '* (+ZI)';
         push @{$section_name_lut->{'.data'}->{match}}, '* (+RW)';
 
-        # re-order sections for ARM toolchain, first by mem_type, next by section_type
+        # add a section for PSRAM_DATA before sorting, this is a separate section in scatter file
+        push @section_lut, { name => 'PSRAM_DATA',
+            align => 32,
+            match => ['*(.cy_psram_data)'],
+            memory => 'psram',
+            memtype => 0, section_type => 1,
+        };
+
+        # re-order sections for ARM toolchain
         @section_lut = sort { $a->{memtype} <=> $b->{memtype} or $a->{section_type} <=> $b->{section_type} } @section_lut;
+        @{$param->{memories}} = sort { $a->{sort} <=> $b->{sort} } @{$param->{memories}};
+
         # SPACE directive does not seem to cause code to compile at asection start + SPACE, so  try to force it
-        $section_name_lut->{'.app_xip_area'}->{start} += 12;
+        $section_name_lut->{'.app_xip_area'}->{param_start} = "+12";
+        $section_name_lut->{'.psram'}->{param_start} = "MTB_LINKSYM_APP_PSRAM_START";
 
         # for scatter files embed the section/execution_region in each memory/load_region
         foreach my $memory (@{$param->{memories}}) {
             my $load_region = uc($memory->{name});
-            if(defined $memory->{start} && defined $memory->{length}) {
-                push @{$db->{sections}}, sprintf "%s 0x%X 0x%X", $load_region, $memory->{start}, $memory->{length};
-            }
-            else {
-                push @{$db->{sections}}, "$load_region +0";
-            }
+            $load_region .= " $memory->{param_start}" if defined $memory->{param_start};
+            $load_region .= " $memory->{start}" if defined $memory->{start} && !defined $memory->{param_start};
+            $load_region .= " +0" if defined !$memory->{start} && !defined $memory->{param_start};
+            $load_region .= " $memory->{param_length}" if defined $memory->{param_length};
+            $load_region .= " $memory->{length}" if defined $memory->{length} && !defined $memory->{param_length};
+            push @{$db->{sections}}, $load_region;
             push @{$db->{sections}}, "{";
             foreach my $section (@section_lut) {
                 next if $section->{memory} ne $memory->{name};
                 next if 0 == scalar(@{$section->{match}});
+                next if $section->{name} =~ /(.rodata|\.ARM\.)/;
                 my $txt = uc($section->{name});
                 $txt =~ s/^\.//;
                 $txt = "\t" . $txt;
-                if(defined $section->{start}) {
+                if(defined $section->{param_start}) {
+                    $txt .= " $section->{param_start}";
+                }
+                elsif(defined $section->{start}) {
                     $txt .= sprintf " 0x%08x", $section->{start};
                 }
                 else {
                     $txt .= " +0";
                 }
                 $txt .= sprintf(" ALIGN %d", $section->{align}) if defined $section->{align};
-            #    $txt .= " UNINIT" if defined $section->{uninit};
+                $txt .= " UNINIT" if defined $section->{uninit};
                 if(defined $section->{empty}) {
                     $txt .= " EMPTY" ;
                     $section->{match} = []; # EMPTY region cannot have any section selectors.
                 }
-                $txt .= sprintf(" 0x%X", $section->{fixed_size}) if defined $section->{fixed_size};
+                $txt .= " $section->{param_length}" if defined $section->{param_length};
                 push @{$db->{sections}}, $txt;
                 push @{$db->{sections}}, "\t{";
                 foreach my $match (@{$section->{match}}) {
+                    next if $match =~ /(\.bss|\.data|\.text\b|\.text\.|\.emb_text|\.rodata|\.constdata|\.ARM\.)/;
                     $match =~ s/KEEP\((.*)\)/$1/;
                     next if $match =~ /\.gnu\./;
                     push @{$db->{sections}}, "\t\t$match";
+                }
+                # add comment line that is marker for PLACE_COMPONENT_IN_SRAM
+                if($section->{name} eq '.text' && $param->{DEFAULT_CODE_LOCATION} ne 'RAM') {
+                    foreach my $post (@{$section->{post}}) {
+                        next unless $post =~ /DO NOT EDIT/;
+                        $post =~ s/\/\*/;/;
+                        $post =~ s/\*\///;
+                        push @{$db->{sections}}, "\t\t$post";
+                        last;
+                    }
                 }
                 push @{$db->{sections}}, "\t}\n";
             }
@@ -615,16 +806,16 @@ sub process_linker_symbols
     if($param->{xip}) {
         push @{$param->{pre_init_cfg_calcs}}, "\tapp_iram_length = app_entry_end - app_iram_bss_begin;";
         push @{$param->{pre_init_cfg_calcs}}, "\tapp_iram_data_begin = app_iram_bss_end;";
-        push @{$param->{pre_init_cfg_calcs}}, "\tapp_iram_data_length = . - app_iram_bss_end;";
+        push @{$param->{pre_init_cfg_calcs}}, "\tapp_iram_data_length = app_text_end - app_iram_bss_end;";
     }
     elsif($param->{LAYOUT} eq 'code_from_top' || $param->{xip_flash_patch} || $param->{xip_app}) {
-        push @{$param->{pre_init_cfg_calcs}}, "\tapp_iram_length = . - app_iram_bss_begin;";
+        push @{$param->{pre_init_cfg_calcs}}, "\tapp_iram_length = app_text_end - app_iram_bss_begin;";
         push @{$param->{pre_init_cfg_calcs}}, "\tapp_iram_data_begin = app_iram_bss_end;";
-        push @{$param->{pre_init_cfg_calcs}}, "\tapp_iram_data_length = . - app_iram_data_begin;";
+        push @{$param->{pre_init_cfg_calcs}}, "\tapp_iram_data_length = app_text_end - app_iram_data_begin;";
     }
     else {
         push @{$param->{pre_init_cfg_calcs}}, "\tapp_iram_data_length = app_iram_data_end - app_iram_data_begin;";
-        push @{$param->{pre_init_cfg_calcs}}, "\tapp_irom_data_begin = .;";
+        push @{$param->{pre_init_cfg_calcs}}, "\tapp_irom_data_begin = app_text_end;";
     }
 
     # if app_irom_data_begin == app_iram_data_begin, no attempt to copy from irom to iram (data init)
@@ -645,6 +836,9 @@ sub output_linker_script
         print $OUT $line . "\n";
     }
     foreach my $line (@{$db->{comments}}) {
+        print $OUT $line . "\n";
+    }
+    foreach my $line (@{$db->{definitions}}) {
         print $OUT $line . "\n";
     }
     foreach my $line (@{$db->{memory_regions}}) {

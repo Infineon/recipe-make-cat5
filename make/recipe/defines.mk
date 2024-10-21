@@ -1,35 +1,27 @@
+################################################################################
+# \file defines.mk
 #
-# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
-# an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
+# \brief
+# Defines, needed for the CYW55513/CYW55913 build recipe.
 #
-# This software, including source code, documentation and related
-# materials ("Software") is owned by Cypress Semiconductor Corporation
-# or one of its affiliates ("Cypress") and is protected by and subject to
-# worldwide patent protection (United States and foreign),
-# United States copyright laws and international treaty provisions.
-# Therefore, you may use this Software only as provided in the license
-# agreement accompanying the software package from which you
-# obtained this Software ("EULA").
-# If no EULA applies, Cypress hereby grants you a personal, non-exclusive,
-# non-transferable license to copy, modify, and compile the Software
-# source code solely for use in connection with Cypress's
-# integrated circuit products.  Any reproduction, modification, translation,
-# compilation, or representation of this Software except as specified
-# above is prohibited without the express written permission of Cypress.
+################################################################################
+# \copyright
+# (c) 2022-2024, Cypress Semiconductor Corporation (an Infineon company) or
+# an affiliate of Cypress Semiconductor Corporation. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 #
-# Disclaimer: THIS SOFTWARE IS PROVIDED AS-IS, WITH NO WARRANTY OF ANY KIND,
-# EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, NONINFRINGEMENT, IMPLIED
-# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. Cypress
-# reserves the right to make changes to the Software without notice. Cypress
-# does not assume any liability arising out of the application or use of the
-# Software or any product or circuit described in the Software. Cypress does
-# not authorize its products for use in any products where a malfunction or
-# failure of the Cypress product may reasonably be expected to result in
-# significant property damage, injury or death ("High Risk Product"). By
-# including Cypress's product in a High Risk Product, the manufacturer
-# of such system or application assumes all risk of such use and in doing
-# so agrees to indemnify Cypress against all liability.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+################################################################################
 
 ifeq ($(WHICHFILE),true)
 $(info Processing $(lastword $(MAKEFILE_LIST)))
@@ -39,6 +31,7 @@ endif
 # Compatibility interface for this recipe make
 #
 MTB_RECIPE__INTERFACE_VERSION:=2
+MTB_RECIPE__EXPORT_INTERFACES:=1 2
 
 # we do not want a linker script; we generate one in pre-build
 # so give this file just to pass the existence check in recipe_setup.mk
@@ -64,10 +57,14 @@ _MTB_RECIPE__OPENOCD_DEVICE_CFG:=cyw55500.cfg
 #
 # List the supported toolchains
 #
-CY_SUPPORTED_TOOLCHAINS=GCC_ARM ARM
-ifeq ($(filter $(TOOLCHAIN),$(CY_SUPPORTED_TOOLCHAINS)),)
-$(error must use supported TOOLCHAIN such as: $(CY_SUPPORTED_TOOLCHAINS))
+ifdef CY_SUPPORTED_TOOLCHAINS
+MTB_SUPPORTED_TOOLCHAINS?=$(CY_SUPPORTED_TOOLCHAINS)
+else
+MTB_SUPPORTED_TOOLCHAINS?=GCC_ARM ARM
 endif
+
+# For BWC with Makefiles that do anything with CY_SUPPORTED_TOOLCHAINS
+CY_SUPPORTED_TOOLCHAINS:=$(MTB_SUPPORTED_TOOLCHAINS)
 
 ifeq ($(OS),Windows_NT)
 CY_OS_DIR=Windows
@@ -100,7 +97,7 @@ ifneq ($(filter %MW_CLIB_SUPPORT,$(COMPONENTS)),)
 HEAP_SIZE?=0x20000
 endif
 
-# create a RAM download image *.hcd
+# handle DIRECT_LOAD
 DIRECT_LOAD?=1
 ifeq ($(DIRECT_LOAD),0)
 XIP?=1
@@ -108,6 +105,39 @@ endif
 _MTB_RECIPE__XIP_FLASH:=$(if $(XIP),1)
 ifeq ($(DIRECT_LOAD),0)
 _MTB_RECIPE__XIP_FLASH:=1
+endif
+# backward compatibilty: XIP=0 should imply ram
+ifeq ($(XIP),0)
+APPEXEC=ram
+endif
+APPEXEC?=flash
+
+# APPEXEC provides the preferred application execution location
+ifeq ($(APPEXEC),flash)
+XIP=1
+else
+ifeq ($(APPEXEC),psram)
+PSRAM=1
+else
+ifeq ($(APPEXEC),ram)
+XIP=0
+PSRAM=0
+else
+ifneq ($(DIRECT_LOAD),0)
+XIP=0
+PSRAM=0
+else
+$(error APPEXEC must be defined as flash, ram, or psram)
+endif
+endif
+endif
+endif
+
+# set up to handle app Makefile with PSRAM=1
+PSRAM?=0
+ifeq ($(PSRAM),1)
+# if PSRAM=1, then XIP=0
+XIP=0
 endif
 
 ifeq ($(DIRECT_LOAD),1)
@@ -146,8 +176,8 @@ CY_CORE_APP_CHIPLOAD_FLAGS+=-DL_TIMEOUT_MULTIPLIER 2
 endif
 
 # flash area
-CY_FLASH0_BEGIN_ADDR:=0x600000
-CY_FLASH0_LENGTH:=0x1000000
+CY_FLASH0_BEGIN_ADDR?=0x600000
+CY_FLASH0_LENGTH?=0x1000000
 
 # room to pad xip and fit app config
 CY_FLASH0_PAD:=0x10000
@@ -162,43 +192,135 @@ endif
 # use btp file to determine flash layout
 CY_CORE_LD_DEFS+=BTP=$(CY_CORE_BTP)
 
+# psram area
+ifneq ($(DIRECT_LOAD),1)
+CY_APP_DEFINES+=-DUSE_PSRAM=1
+PSRAM_START_ADDRESS?=0x02800000
+PSRAM_XIP_LENGTH?=0x800000
+CY_CORE_LD_DEFS+=PSRAM_ADDR=$(PSRAM_START_ADDRESS)
+CY_CORE_LD_DEFS+=PSRAM_LEN=$(PSRAM_XIP_LENGTH)
+endif
+
 # XIP or flash patch
 ifneq ($(_MTB_RECIPE__XIP_FLASH),)
 CY_CORE_APP_SPECIFIC_DS_LEN?=0x1C
+ifeq ($(PSRAM),1)
+CY_CORE_LD_DEFS+=XIP_DS_OFFSET_FLASH_PATCH=$(CY_CORE_APP_SPECIFIC_DS_LEN)
+CY_CORE_LD_DEFS+=DEFAULT_CODE_LOCATION=PSRAM
+CY_CORE_APP_FLASHPATCH_EXTRA=_FLASHPATCH_
+$(info APP loads code/rodata to PSRAM from FLASH except .cy_ramfunc and .cy_xip sections)
+else
 ifneq ($(XIP),1)
 CY_CORE_LD_DEFS+=XIP_DS_OFFSET_FLASH_PATCH=$(CY_CORE_APP_SPECIFIC_DS_LEN)
+CY_CORE_LD_DEFS+=DEFAULT_CODE_LOCATION=RAM
 CY_CORE_APP_FLASHPATCH_EXTRA=_FLASHPATCH_
-$(info APP loads to RAM from FLASH except .cy_xip sections)
+$(info APP loads to RAM from FLASH except .cy_xip or .cy_psram_* sections)
 else
 CY_CORE_LD_DEFS+=XIP_DS_OFFSET_FLASH_APP=$(CY_CORE_APP_SPECIFIC_DS_LEN)
+CY_CORE_LD_DEFS+=DEFAULT_CODE_LOCATION=FLASH
 CY_CORE_APP_XIP_EXTRA=_XIP_FLASHAPP_
-$(info APP keeps code/rodata in XIP except .cy_ramfunc sections)
+$(info APP keeps code/rodata in XIP except .cy_ramfunc and .cy_psram_* sections)
+endif
 endif
 CY_CORE_PATCH_FW_LEN:=$(shell $(CY_SHELL_STAT_CMD) $(CY_CORE_PATCH_FW))
 CY_CORE_PATCH_SEC_LEN:=$(shell $(CY_SHELL_STAT_CMD) $(CY_CORE_PATCH_SEC))
 CY_CORE_DS_LOCATION:=$(shell printf "0x%08X" $$(($(CY_CORE_PATCH_FW_LEN) + $(CY_CORE_PATCH_SEC_LEN) + 0x680048)))
 CY_CORE_LD_DEFS+=DS_LOCATION=$(CY_CORE_DS_LOCATION)
-CY_CORE_XIP_LEN_LD_DEFS:=XIP_LEN=$(shell printf "0x%08X" $$(($(CY_FLASH0_LENGTH) - ($(CY_CORE_DS_LOCATION) - $(CY_FLASH0_BEGIN_ADDR) + $(CY_FLASH0_PAD)))))
+CY_CORE_XIP_LEN:=$(shell printf "0x%08X" $$(($(CY_FLASH0_LENGTH) - ($(CY_CORE_DS_LOCATION) - $(CY_FLASH0_BEGIN_ADDR) + $(CY_FLASH0_PAD)))))
+CY_CORE_XIP_LEN_LD_DEFS:=XIP_LEN=$(CY_CORE_XIP_LEN)
 CY_CORE_LD_DEFS+=$(CY_CORE_XIP_LEN_LD_DEFS)
+else
+CY_CORE_PATCH_FW_LEN:=$(shell $(CY_SHELL_STAT_CMD) $(CY_CORE_PATCH_FW))
+CY_CORE_PATCH_SEC_LEN:=$(shell $(CY_SHELL_STAT_CMD) $(CY_CORE_PATCH_SEC))
+CY_CORE_DS_LOCATION:=$(shell printf "0x%08X" $$(($(CY_CORE_PATCH_FW_LEN) + $(CY_CORE_PATCH_SEC_LEN) + 0x6800)))
+CY_CORE_LD_DEFS+=DS_LOCATION=$(CY_CORE_DS_LOCATION)
+$(info APP loads directly to RAM, no FLASH is used)
 endif
+
+# pull in symbols that will vary depending on pdl /firmware version and build settings
+# these will be passed on command line to predefine linker script
+ifeq ($(CY_CORE_PATCH_SYMBOLS),)
+  ifeq ($(NO_OBFS),)
+    MTB_RECIPE__PATCH_SYMBOL_FILE:=$(CY_CORE_PATCH:.elf=.$(MTB_TOOLCHAIN_$(TOOLCHAIN)__SUFFIX_SYMBOLS))
+  else
+    MTB_RECIPE__PATCH_SYMBOL_FILE:=$(CY_CORE_PATCH)
+  endif
+else
+  MTB_RECIPE__PATCH_SYMBOL_FILE:=$(CY_CORE_PATCH_SYMBOLS:.sym=.$(MTB_TOOLCHAIN_$(TOOLCHAIN)__SUFFIX_SYMBOLS))
+endif
+
+# use *.sym file for symbols; symbols should always match *.symdefs file
+CY_SYM_FILE_TEXT:=$(shell cat -e $(MTB_RECIPE__PATCH_SYMBOL_FILE:.symdefs=.sym))
+CY_SYM_FILE_TEXT:=$(subst $(MTB__SPACE),,$(CY_SYM_FILE_TEXT))
+CY_SYM_FILE_TEXT:=$(subst ^M,,$(CY_SYM_FILE_TEXT))
+CY_SYM_FILE_TEXT:=$(subst ;,,$(CY_SYM_FILE_TEXT))
+CY_SYM_FILE_TEXT:=$(subst $$,$(MTB__SPACE),$(CY_SYM_FILE_TEXT))
+
+MTB_LINKSYM_PATCH_CODE_START = $(call extract_btp_file_value,CODE_AREA,$(CY_SYM_FILE_TEXT))
+MTB_LINKSYM_PATCH_CODE_EXTENT = $(call extract_btp_file_value,FIRST_FREE_SECTION_IN_PROM,$(CY_SYM_FILE_TEXT))
+MTB_LINKSYM_PATCH_CODE_END = $(call extract_btp_file_value,PATCH_CODE_END,$(CY_SYM_FILE_TEXT))
+MTB_LINKSYM_PATCH_SRAM_END = $(call extract_btp_file_value,FIRST_FREE_SECTION_IN_SRAM,$(CY_SYM_FILE_TEXT))
+MTB_LINKSYM_PATCH_SRAM_END_DIRECT_LOAD = $(call extract_btp_file_value,POST_INIT_SECTION_IN_SRAM,$(CY_SYM_FILE_TEXT))
+MTB_LINKSYM_MPAF_START1 = $(call extract_btp_file_value,MPAF_SRAM_AREA,$(CY_SYM_FILE_TEXT))
+MTB_LINKSYM_MPAF_START2 = $(call extract_btp_file_value,mpaf_data_area,$(CY_SYM_FILE_TEXT))
+MTB_LINKSYM_MPAF_START3 = $(call extract_btp_file_value,MPAF_ZI_AREA,$(CY_SYM_FILE_TEXT))
+MTB_LINKSYM_MPAF_START4 = $(call extract_btp_file_value,POST_MPAF_SECTION_IN_SRAM,$(CY_SYM_FILE_TEXT))
+MTB_LINKSYM_PRE_INIT_CFG = $(call extract_btp_file_value,gp_wiced_app_pre_init_cfg,$(CY_SYM_FILE_TEXT))
+
+# end of patch sram, used in resource report
+ifeq ($(DIRECT_LOAD),1)
+ifneq ($(MTB_LINKSYM_PATCH_SRAM_END_DIRECT_LOAD),)
+MTB_LINKSYM_PATCH_SRAM_END = $(MTB_LINKSYM_PATCH_SRAM_END_DIRECT_LOAD)
+endif
+endif
+
+# start of app SRAM is at end of patch SRAM
+MTB_LINKSYM_APP_SRAM_START=$(MTB_LINKSYM_PATCH_SRAM_END)
+
+# end of app SRAM is start of MPAF area, find lowest value
+ifneq ($(MTB_LINKSYM_MPAF_START1),)
+    MTB_LINKSYM_APP_SRAM_END=$(MTB_LINKSYM_MPAF_START1)
+    MTB_LINKSYM_APP_SRAM_END_PAD=0x80
+else
+    ifneq ($(MTB_LINKSYM_MPAF_START2),)
+        MTB_LINKSYM_APP_SRAM_END=$(MTB_LINKSYM_MPAF_START2)
+        MTB_LINKSYM_APP_SRAM_END_PAD=0x0
+    else
+        ifneq ($(MTB_LINKSYM_MPAF_START3),)
+            MTB_LINKSYM_APP_SRAM_END=$(MTB_LINKSYM_MPAF_START3)
+            MTB_LINKSYM_APP_SRAM_END_PAD=0x80
+        else
+            ifneq ($(MTB_LINKSYM_MPAF_START4),)
+                MTB_LINKSYM_APP_SRAM_END=$(MTB_LINKSYM_MPAF_START4)
+                MTB_LINKSYM_APP_SRAM_END_PAD=0x200
+            endif
+        endif
+    endif
+endif
+
+# linker predefine parameters to pass firmware-specific and build-type-specific values to linker script on cli
+MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_PRE_INIT_CFG=$(MTB_LINKSYM_PRE_INIT_CFG)
+MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_SRAM_START=$(MTB_LINKSYM_APP_SRAM_START)
+MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_SRAM_LENGTH=$(shell printf "0x%08X" $$(($(MTB_LINKSYM_APP_SRAM_END) - $(MTB_LINKSYM_APP_SRAM_START))))
+MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_SRAM_END=$(MTB_LINKSYM_APP_SRAM_END)
+MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_SRAM_END_PAD=$(MTB_LINKSYM_APP_SRAM_END_PAD)
+# only RAM storage defined for DIRECT_LOAD=1
+ifneq ($(DIRECT_LOAD),1)
+MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_PSRAM_START=$(PSRAM_START_ADDRESS)
+MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_PSRAM_LENGTH=$(PSRAM_XIP_LENGTH)
+ifneq ($(CY_CORE_DS_LOCATION),)
+MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_XIP_START=$(shell printf "0x%08X" $$(($(CY_CORE_DS_LOCATION) + $(CY_CORE_APP_SPECIFIC_DS_LEN))))
+endif
+ifneq ($(CY_CORE_XIP_LEN),)
+MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_XIP_LENGTH=$(CY_CORE_XIP_LEN)
+endif
+endif # ifneq ($(DIRECT_LOAD),1)
 
 # define heap
 ifneq ($(HEAP_SIZE),)
 CY_CORE_LD_DEFS+=HEAP_SIZE=$(HEAP_SIZE)
+MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_HEAP_SIZE=$(HEAP_SIZE)
 endif
-
-#
-# add to default linker script input section matches
-#
-LINKER_SCRIPT_ADD_XIP?=
-LINKER_SCRIPT_ADD_RAM_CODE?=
-LINKER_SCRIPT_ADD_RAM_DATA?=
-
-# build into comma delimited lists for the command line
-CY_CORE_LD_DEFS+=$(if $(LINKER_SCRIPT_ADD_XIP),ADD_XIP=$(subst $(MTB__SPACE),$(MTB__COMMA),$(LINKER_SCRIPT_ADD_XIP)))
-CY_CORE_LD_DEFS+=$(if $(LINKER_SCRIPT_ADD_RAM_CODE),ADD_RAM_CODE=$(subst $(MTB__SPACE),$(MTB__COMMA),$(LINKER_SCRIPT_ADD_RAM_CODE)))
-CY_CORE_LD_DEFS+=$(if $(LINKER_SCRIPT_ADD_RAM_DATA),ADD_RAM_DATA=$(subst $(MTB__SPACE),$(MTB__COMMA),$(LINKER_SCRIPT_ADD_RAM_DATA)))
-
 
 #
 # Core flags and defines

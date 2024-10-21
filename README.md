@@ -1,8 +1,8 @@
-# CYW55513 GNU make Build System
+# CYW55513/CYW55913 GNU make Build System
 
 ## Overview
 
-This repo provides the build recipe make files and scripts for building and programming CYW55513 applications. Builds can be run either through a command-line interface (CLI) or through the Eclipse IDE for ModusToolbox.
+This repo provides the build recipe make files and scripts for building and programming CYW55513/CYW55913 applications. Builds can be run either through a command-line interface (CLI) or through a supported IDE such as Eclipse or VS Code.
 
 ## Prerequisite
 
@@ -18,4 +18,4 @@ To list the build options, run the "help" target by typing "make help" in CLI. F
 * [Infineon GitHub](https://github.com/Infineon)
 * [ModusToolbox](https://www.infineon.com/cms/en/design-support/tools/sdk/modustoolbox-software)
 ---
-© Cypress Semiconductor Corporation, 2022-2024.
+(c) 2022-2024, Cypress Semiconductor Corporation (an Infineon company) or an affiliate of Cypress Semiconductor Corporation. All rights reserved.

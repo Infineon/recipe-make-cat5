@@ -51,7 +51,8 @@
                 "set mem inaccessible-by-default off",
                 "-enable-pretty-printing",
                 "set remotetimeout 15",
-                "info threads"
+                "info threads",
+                "set *0xE000EDFC=(*0xE000EDFC|0x10000)" // Set DEMCR.MON_EN
             ],
             "overrideRestartCommands": [
             ],

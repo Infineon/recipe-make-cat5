@@ -108,7 +108,13 @@ _MTB_TOOLCHAIN_GCC_ARM__COMMON_FLAGS:=\
 	-mthumb\
 	-mfpu=fpv5-sp-d16\
 	-mfloat-abi=hard\
-	-Wall
+	-Wall\
+	--specs=nano.specs\
+	-ffunction-sections\
+	-fdata-sections\
+	-ffat-lto-objects\
+	-g\
+	-pipe
 
 # Command line flags for c-files
 MTB_TOOLCHAIN_GCC_ARM__CFLAGS:=\
@@ -137,9 +143,7 @@ MTB_TOOLCHAIN_GCC_ARM__LDFLAGS:=\
 	$(_MTB_TOOLCHAIN_GCC_ARM__COMMON_FLAGS)\
 	-Wl,--cref\
 	-Wl,--gc-sections\
-	-Wl,--warn-common\
-	-nostartfiles\
-	-nodefaultlibs
+	-Wl,--warn-common
 
 # Command line flags for archiving
 MTB_TOOLCHAIN_GCC_ARM__ARFLAGS=rvs
@@ -176,10 +180,7 @@ MTB_TOOLCHAIN_GCC_ARM__ENTRY_ARG:=-Wl,--entry=
 MTB_TOOLCHAIN_GCC_ARM__SYMBOLS_ARG:=-Wl,--just-symbols=
 MTB_TOOLCHAIN_GCC_ARM__LIBPATH_ARG:=-L
 MTB_TOOLCHAIN_GCC_ARM__C_LIBRARY_ARG:=-l
-
-# threadx is in ROM for cat5
-# provide c++ support (new, delete)
-MTB_TOOLCHAIN_GCC_ARM__EXTRA_LIBS+=gcc c nosys stdc++ m
+MTB_TOOLCHAIN_GCC_ARM__LD_PREDEFINE_ARG:=-Wl,--defsym$(MTB__SPACE)
 
 # Produce a makefile dependency rule for each input file
 MTB_TOOLCHAIN_GCC_ARM__DEPENDENCIES=-MMD -MP -MF "$(@:.$(MTB_TOOLCHAIN_GCC_ARM__SUFFIX_O)=.$(MTB_TOOLCHAIN_GCC_ARM__SUFFIX_D))" -MT "$@"
@@ -192,3 +193,4 @@ MTB_TOOLCHAIN_GCC_ARM__INCLUDES=
 MTB_TOOLCHAIN_GCC_ARM__DEFINES=$(_MTB_TOOLCHAIN_GCC_ARM__DEBUG_FLAG)
 
 MTB_TOOLCHAIN_GCC_ARM__VSCODE_INTELLISENSE_MODE:=gcc-arm
+MTB_TOOLCHAIN_GCC_ARM__VSCODE_PROBLEM_MATCHER:=gcc

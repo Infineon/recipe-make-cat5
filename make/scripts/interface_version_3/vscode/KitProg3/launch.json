@@ -44,6 +44,9 @@
                 "interface/kitprog3.cfg",
                 "target/&&_MTB_RECIPE__OPENOCD_CFG&&"
             ],
+            "openOCDLaunchCommands": [
+                "proc before_examine_proc { } {cyw55500.dap apreg 0x10000 0xD04 0xe000edf0; cyw55500.dap apreg 0x10000 0xD0C 0xa05f0003; sleep 100}; cyw55500.cpu.cm33 configure -event examine-start before_examine_proc; init" // Halt the CPU before the examination to wake it up.
+            ],
             "overrideAttachCommands": [
                 "set mem inaccessible-by-default off",
                 "-enable-pretty-printing",
@@ -53,37 +56,6 @@
             ],
             "overrideRestartCommands": [
             ],
-            "showDevDebugOutput": "none"
-        },
-        // When using 'attach', make sure your program is running on the board and that your
-        // executable matches the image in the chip exactly, or else strange things can happen
-        // with breakpoints, variables, etc.
-        {
-            "name": "Attach Debug (JLink)",
-            "type": "cortex-debug",
-            "request": "attach",
-            "cwd": "${workspaceFolder}",
-            "executable": "&&_MTB_RECIPE__ELF_FILE&&",
-            "servertype": "jlink",
-            "device": "&&_MTB_RECIPE__JLINK_DEVICE_CFG&&",
-            "interface": "jtag",
-            "overrideAttachCommands": [
-                "set *0xE000EDFC=(*0xE000EDFC|0x10000)" // Set DEMCR.MON_EN
-            ],
-            "overrideRestartCommands": [
-            ],
-            "showDevDebugOutput": "none"
-        },
-        {
-            "name": "Program",
-            "type": "cortex-debug",
-            "request": "launch",
-            "cwd": "${workspaceFolder}",
-            "executable": "&&_MTB_RECIPE__ELF_FILE&&",
-            "servertype": "external",
-            "gdbTarget": "localhost",
-            "debuggerArgs": ["--batch"],
-            "preLaunchTask": "Program: build and download app [Debug]",
             "showDevDebugOutput": "none"
         }
     ]

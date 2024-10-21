@@ -24,7 +24,7 @@
 <stringAttribute key="ilg.gnumcueclipse.debug.gdbjtag.jlink.gdbClientOtherCommands" value="set mem inaccessible-by-default off"/>
 <stringAttribute key="ilg.gnumcueclipse.debug.gdbjtag.jlink.gdbClientOtherOptions" value=""/>
 <stringAttribute key="ilg.gnumcueclipse.debug.gdbjtag.jlink.gdbServerConnection" value="usb"/>
-<stringAttribute key="ilg.gnumcueclipse.debug.gdbjtag.jlink.gdbServerConnectionAddress" value=""/>
+<stringAttribute key="ilg.gnumcueclipse.debug.gdbjtag.jlink.gdbServerConnectionAddress" value="&&_MTB_RECIPE__PROBE_SERIAL&&"/>
 <stringAttribute key="ilg.gnumcueclipse.debug.gdbjtag.jlink.gdbServerDebugInterface" value="jtag"/>
 <stringAttribute key="ilg.gnumcueclipse.debug.gdbjtag.jlink.gdbServerDeviceEndianness" value="little"/>
 <stringAttribute key="ilg.gnumcueclipse.debug.gdbjtag.jlink.gdbServerDeviceName" value="&&_MTB_RECIPE__JLINK_DEVICE&&"/>

@@ -38,6 +38,15 @@ ifneq ($(CY_COMPILER_PATH),)
 MTB_TOOLCHAIN_ARM__BASE_DIR:=$(call mtb_core__escaped_path,$(CY_COMPILER_PATH))
 else
 MTB_TOOLCHAIN_ARM__BASE_DIR:=C:/Program\ Files/ARMCompiler6.16
+ifeq ($(CY_SECONDSTAGE),)
+ifneq ($(filter $(MAKECMDGOALS), build build_proj qbuild qbuild_proj all program program_proj uvision uvision5),)
+$(info Note: The CY_COMPILER_ARM_DIR is not set. The default path of the ARM toolchain is $(MTB_TOOLCHAIN_ARM__BASE_DIR).\
+If it is not correct, set the CY_COMPILER_ARM_DIR variable to the location of the ARM toolchain directory.)
+$(info Note: The feature of setting the default location of the ARM toolchain has been deprecated.\
+It will be removed in the next minor release. Set the CY_COMPILER_ARM_DIR variable to the location\
+of the ARM toolchain directory.)
+endif
+endif
 endif
 endif
 
@@ -108,7 +117,8 @@ MTB_TOOLCHAIN_ARM__CFLAGS:=\
 	$(_MTB_TOOLCHAIN_ARM__COMMON_FLAGS)\
 	-g\
 	-fshort-enums\
-	-fshort-wchar
+	-fshort-wchar\
+	-fdiagnostics-absolute-paths
 
 # Command line flags for cpp-files
 MTB_TOOLCHAIN_ARM__CXXFLAGS:=$(MTB_TOOLCHAIN_ARM__CFLAGS) -fno-rtti -fno-exceptions
@@ -161,6 +171,7 @@ MTB_TOOLCHAIN_ARM__ENTRY_ARG:=--entry=
 MTB_TOOLCHAIN_ARM__SYMBOLS_ARG:=
 MTB_TOOLCHAIN_ARM__LIBPATH_ARG:=--libpath=
 MTB_TOOLCHAIN_ARM__C_LIBRARY_ARG:=--library=
+MTB_TOOLCHAIN_ARM__LD_PREDEFINE_ARG:=--predefine=
 
 
 # Produce a makefile dependency rule for each input file
@@ -174,3 +185,5 @@ MTB_TOOLCHAIN_ARM__INCLUDES:=
 MTB_TOOLCHAIN_ARM__DEFINES:=$(_MTB_TOOLCHAIN_ARM__DEBUG_FLAG)
 
 MTB_TOOLCHAIN_ARM__VSCODE_INTELLISENSE_MODE:=clang-arm
+# ARM clang has the the same error syntax as GCC.
+MTB_TOOLCHAIN_ARM__VSCODE_PROBLEM_MATCHER:=gcc

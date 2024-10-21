@@ -1,35 +1,28 @@
+################################################################################
+# \file recipe.mk
 #
-# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
-# an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
+# \brief
+# Set up a set of defines, includes, software components, linker script, 
+# Pre and Post build steps and call a macro to create a specific ELF file.
 #
-# This software, including source code, documentation and related
-# materials ("Software") is owned by Cypress Semiconductor Corporation
-# or one of its affiliates ("Cypress") and is protected by and subject to
-# worldwide patent protection (United States and foreign),
-# United States copyright laws and international treaty provisions.
-# Therefore, you may use this Software only as provided in the license
-# agreement accompanying the software package from which you
-# obtained this Software ("EULA").
-# If no EULA applies, Cypress hereby grants you a personal, non-exclusive,
-# non-transferable license to copy, modify, and compile the Software
-# source code solely for use in connection with Cypress's
-# integrated circuit products.  Any reproduction, modification, translation,
-# compilation, or representation of this Software except as specified
-# above is prohibited without the express written permission of Cypress.
+################################################################################
+# \copyright
+# (c) 2022-2024, Cypress Semiconductor Corporation (an Infineon company) or
+# an affiliate of Cypress Semiconductor Corporation. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 #
-# Disclaimer: THIS SOFTWARE IS PROVIDED AS-IS, WITH NO WARRANTY OF ANY KIND,
-# EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, NONINFRINGEMENT, IMPLIED
-# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. Cypress
-# reserves the right to make changes to the Software without notice. Cypress
-# does not assume any liability arising out of the application or use of the
-# Software or any product or circuit described in the Software. Cypress does
-# not authorize its products for use in any products where a malfunction or
-# failure of the Cypress product may reasonably be expected to result in
-# significant property damage, injury or death ("High Risk Product"). By
-# including Cypress's product in a High Risk Product, the manufacturer
-# of such system or application assumes all risk of such use and in doing
-# so agrees to indemnify Cypress against all liability.
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+################################################################################
 
 ifeq ($(WHICHFILE),true)
 $(info Processing $(lastword $(MAKEFILE_LIST)))
@@ -46,11 +39,8 @@ MTB_RECIPE__EXTRA_LIBS:=$(addprefix $(MTB_RECIPE__C_LIBRARY_ARG),$(MTB_TOOLCHAIN
 MTB_RECIPE__COMPONENT+=CAT5 THREADX
 
 # Linker Script generated in prebuild by script
-ifneq ($(MTB_RECIPE__LINKER_SCRIPT),)
-MTB_RECIPE__GENERATED_LINKER_SCRIPT:="$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).$(MTB_TOOLCHAIN_$(TOOLCHAIN)__SUFFIX_LS)"
-else
-$(call mtb__error,Unable to find linker script.)
-endif # ($(MTB_RECIPE__LINKER_SCRIPT),)
+MTB_RECIPE__GENERATED_LINKER_SCRIPT:=$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).$(MTB_TOOLCHAIN_$(TOOLCHAIN)__SUFFIX_LS)
+MTB_RECIPE__LINKER_SCRIPT:=$(MTB_RECIPE__GENERATED_LINKER_SCRIPT)
 
 # use public symbols from patch.sym generated in mtb-pdl-cat5
 ifeq ($(CY_CORE_PATCH_SYMBOLS),)
@@ -66,10 +56,17 @@ endif
 #
 # linker flags
 #
+# set up command line predefines for linker script
+MTB_RECIPE__LINKER_CLI_PREDEF_ARM:=$(foreach onedef,$(MTB_RECIPE__LINKER_CLI_SYMBOLS),"-D$(onedef)")
+MTB_RECIPE__LINKER_CLI_PREDEF_GCC_ARM:=$(MTB_RECIPE__LINKER_CLI_SYMBOLS)
+MTB_RECIPE__LDFLAGS_PREDEFINE:=$(addprefix $(MTB_TOOLCHAIN_$(TOOLCHAIN)__LD_PREDEFINE_ARG),$(MTB_RECIPE__LINKER_CLI_PREDEF_$(TOOLCHAIN)))
+
 MTB_RECIPE__LDFLAGS_POSTBUILD:=$(LDFLAGS) $(MTB_TOOLCHAIN_$(TOOLCHAIN)__LDFLAGS)
+MTB_RECIPE__LDFLAGS_POSTBUILD+=$(MTB_RECIPE__LDFLAGS_PREDEFINE)
+
 MTB_RECIPE__LDFLAGS:=$(MTB_RECIPE__LDFLAGS_POSTBUILD)
 MTB_RECIPE__LDFLAGS+=$(MTB_RECIPE__EXTRA_SYMBOLS_ARG)"$(MTB_RECIPE__PATCH_SYMBOLS)"
-MTB_RECIPE__LDFLAGS+=$(MTB_RECIPE__LSFLAGS)$(MTB_RECIPE__GENERATED_LINKER_SCRIPT)
+MTB_RECIPE__LDFLAGS+=$(MTB_RECIPE__LSFLAGS)$(MTB_RECIPE__LINKER_SCRIPT)
 
 #
 # Compiler flags construction
@@ -166,9 +163,14 @@ MTB_RECIPE__LIBS=$(LDLIBS) $(MTB_CORE__SEARCH_APP_LIBS)
 CY_RECIPE_EXTRA_LIBS:=$(MTB_RECIPE__EXTRA_LIBS)
 
 #
-# Prebuild step
+# Prebuild and precompile steps
 #
 ifeq ($(LIBNAME),)
+ifeq ($(LINKER_SCRIPT),)
+
+#
+# if no linker script given, generate linker script
+#
 CY_RECIPE_PREBUILD?=\
 	bash --norc --noprofile\
 	"$(MTB_TOOLS__RECIPE_DIR)/make/scripts/bt_pre_build.bash"\
@@ -180,19 +182,63 @@ CY_RECIPE_PREBUILD?=\
 	$(if $(findstring 1,$(DIRECT_LOAD)),--direct)\
 	$(if $(VERBOSE),"--verbose")\
 	&& MTB__SILENT_OUTPUT=
-endif
 
+else
+# if linker script is given, just copy it to build output in prebuild
+CY_RECIPE_PREBUILD?=\
+	cp $(LINKER_SCRIPT) $(MTB_RECIPE__GENERATED_LINKER_SCRIPT)
+
+endif # ifeq ($(LINKER_SCRIPT),)
+
+#
+# for PRECOMPILE recipe, filter all object files by asset search paths listed in PLACE_COMPONENT_IN_SRAM_PATH
+# set up input section matches to place asset code/rodata into SRAM
+# use "sed -i 's/match_line_text/\1 insert_lines_text/' linker_script_filename"
+# getting the correct sed match/replace was complicated by /* */ comment in script and multiple line replace
+#
+CY_INPUT_SECTION_MATCH_GCC_ARM:=\(.*DO NOT EDIT: add module select patterns.*\)
+CY_INPUT_SECTION_MATCH_ARM:=\(.*DO NOT EDIT: add module select patterns.*\)
+CY_INPUT_SECTION_MATCH:=$(CY_INPUT_SECTION_MATCH_$(TOOLCHAIN))
+CY_INPUT_SECTION_SELECT_GCC_ARM:=(.text .text.* .rodata .rodata.* .constdata .constdata.*)
+CY_INPUT_SECTION_SELECT_ARM:=(+RO)
+CY_INPUT_SECTION_SELECT:=$(CY_INPUT_SECTION_SELECT_$(TOOLCHAIN))
+#
+# set up input section matches to place asset code/rodata into SRAM
+#
+PLACE_COMPONENT_IN_SRAM_PATHS=$(PLACE_COMPONENT_IN_SRAM)
+PLACE_COMPONENT_IN_SRAM_PATH_FILTER=$(addsuffix /%,$(subst ../,,$(PLACE_COMPONENT_IN_SRAM_PATHS)))
+
+# use precompile step to modify the script, adding input section matches
+# at this stage of build, all OBJ files are known
+# filter the OBJ by assets listed in PLACE_COMPONENT_IN_SRAM
+# to modify the linker script to place the asset code/rodata into RAM
+CY_RECIPE_PRECOMPILE?=\
+	sed -i.tmp 's|$(CY_INPUT_SECTION_MATCH)|\1 \
+	$(foreach o_file,$(notdir $(filter $(PLACE_COMPONENT_IN_SRAM_PATH_FILTER),\
+	$(patsubst $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/ext/%,%,\
+	$(_MTB_CORE__BUILD_ALL_OBJ_FILES)))),\n\t\t*$(o_file) $(CY_INPUT_SECTION_SELECT))|' $(MTB_RECIPE__GENERATED_LINKER_SCRIPT);
+
+# insert the additional PRECOMPILE recipe as precursor to _mtb_build_precompile and dependent on _mtb_build_gensrc
+bsp_prep_mod_linker_script: _mtb_build_gensrc
+
+bsp_mod_linker_script: $(MTB_RECIPE__GENERATED_LINKER_SCRIPT) bsp_prep_mod_linker_script
+	$(CY_RECIPE_PRECOMPILE)
+
+_mtb_build_precompile: bsp_mod_linker_script
+
+# insert the additional PREBUILD recipe as precursor to project_prebuild and dependent on bsp_prebuild
 bsp_gen_ld_prep_prebuild: bsp_prebuild
 
 bsp_gen_ld_prebuild: bsp_gen_ld_prep_prebuild
 	$(CY_RECIPE_PREBUILD)
 
 project_prebuild: bsp_gen_ld_prebuild
+endif # ifeq ($(LIBNAME),)
 
 #
 # Postbuild step
 #
-# Note that --cross and --toolchain are both needed.
+# Note that --cross, --toolchain and --toolchaindir are all needed.
 # Some gcc tools are used for build steps for both GCC_ARM and ARM toolchain.
 #
 ifeq ($(LIBNAME),)
@@ -208,6 +254,7 @@ _MTB_RECIPE__POSTBUILD:=\
     --appname="$(APPNAME)"\
     --cross="$(MTB_TOOLCHAIN_GCC_ARM__BASE_DIR)/bin/arm-none-eabi-"\
     --toolchain="$(TOOLCHAIN)"\
+    --toolchaindir="$(MTB_TOOLCHAIN_$(TOOLCHAIN)__BASE_DIR)"\
     --appver="$(APP_VERSION)"\
     --hdf="$(CY_CORE_HDF)"\
     --entry="$(CY_CORE_APP_ENTRY)"\
@@ -223,6 +270,8 @@ _MTB_RECIPE__POSTBUILD:=\
     --extras=$(CY_CORE_APP_XIP_EXTRA)$(CY_CORE_APP_FLASHPATCH_EXTRA)$(CY_CORE_DIRECT_LOAD)_$(LIFE_CYCLE_STATE)_\
     --extrahex=$(CY_CORE_PATCH_CERT)\
     --patch="$(MTB_RECIPE__PATCH_SYMBOLS)"\
+    --ld_path=$(MTB_RECIPE__GENERATED_LINKER_SCRIPT)\
+    --ld_gen=$(if $(LINKER_SCRIPT),0,1)\
     --ldargs="$(MTB_RECIPE__LDFLAGS_POSTBUILD)\
         $(MTB_RECIPE__OBJRSPFILE)$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/objlist.rsp\
         $(MTB_RECIPE__STARTGROUP) $(CY_RECIPE_EXTRA_LIBS) $(MTB_RECIPE__LIBS) $(MTB_RECIPE__ENDGROUP)"\
@@ -252,17 +301,22 @@ make-recipe-cat5-help:
 	$(info $(MTB__SPACE)CAT5 build help)
 	$(info ==============================================================================)
 	$(info $(MTB__SPACE)CAT5 build makefile variables:)
-	$(info $(MTB__SPACE) Storage and load defaults set by bsp.mk, but currently XIP=$(XIP) and DIRECT_LOAD=$(DIRECT_LOAD))
-	$(info $(MTB__SPACE)   DIRECT_LOAD is for targets without FLASH, building so code and data are loaded directly to the execution locations.)
-	$(info $(MTB__SPACE)   If DIRECT_LOAD=0, then XIP is defined XIP?=1)
-	$(info $(MTB__SPACE)   XIP=1 specifies "execute in place" for code or read-only data, except when in sections named .cy_ramfunc.)
+	$(info $(MTB__SPACE) Execution and load defaults set by bsp.mk. The default application execution is set by APPEXEC.)
+	$(info $(MTB__SPACE)   Currently APPEXEC=$(APPEXEC) and has valid settings of flash, psram, or ram)
+	$(info $(MTB__SPACE)   APPEXEC=flash will set XIP=1)
+	$(info $(MTB__SPACE)   APPEXEC=psram will set PSRAM=1)
+	$(info $(MTB__SPACE)   APPEXEC=ram will set XIP=0, PSRAM=0)
+	$(info $(MTB__SPACE)   XIP=1 specifies "execute in place" for code or read-only data, except when in sections named .cy_ramfunc or .cy_psram_*.)
 	$(info $(MTB__SPACE)   Code or data will be located in .cy_ramfunc section when declared in source with CY_RAMFUNC_BEGIN)
-	$(info $(MTB__SPACE)   XIP=0 specifies code or read-only data to be loaded from FLASH to RAM, except when in sections named .cy_xip.)
-	$(info $(MTB__SPACE) CAT5 uses generated linker scripts, so some parameters are supported:)
-	$(info $(MTB__SPACE)   Section matches to add for XIP: LINKER_SCRIPT_ADD_XIP?=$(LINKER_SCRIPT_ADD_XIP))
-	$(info $(MTB__SPACE)   Section matches to add for RAM code: LINKER_SCRIPT_ADD_RAM_CODE?=$(LINKER_SCRIPT_ADD_RAM_CODE))
-	$(info $(MTB__SPACE)   Section matches to add for RAM data: LINKER_SCRIPT_ADD_RAM_DATA?=$(LINKER_SCRIPT_ADD_RAM_DATA))
-	$(info $(MTB__SPACE)   Example: LINKER_SCRIPT_ADD_XIP=*\(test1.o\))
+	$(info $(MTB__SPACE)   XIP=0 specifies code or read-only data to be loaded from FLASH to RAM, except when in sections named .cy_xip. or .cy_psram_*)
+	$(info $(MTB__SPACE)   PSRAM=1 specifies code or read-only data to be loaded from FLASH to PSRAM, except when in sections named .cy_ramfunc  or .cy_xip.)
+	$(info $(MTB__SPACE)   DIRECT_LOAD=1 is for targets without FLASH, building a download image to load directly to the RAM execution locations.)
+	$(info $(MTB__SPACE) If the app Makefile has "LINKER_SCRIPT=", then a linker script will be generated in the build output directory)
+	$(info $(MTB__SPACE) If "LINKER_SCRIPT=<path to a valid linker a script>", then that linker script will be used in the build output directory.)
+	$(info $(MTB__SPACE)   Example linker scripts are in the bsp. Select by setting LINKER_PATH=$$(BSP_LINKER_SCRIPT) in the application Makefile)
+	$(info $(MTB__SPACE) The app Makefile can list assets that should load to RAM, similar to the named section ".cy_ramfunc" above.)
+	$(info $(MTB__SPACE)   The list "PLACE_COMPONENT_IN_SRAM+=$$(SEARCH_<assetname>)" provides paths to assets that should have code/rodata loaded to RAM.)
+	$(info $(MTB__SPACE)   The SEARCH* paths are defined in the application folder libs/mtb.mk. Example: PLACE_COMPONENT_IN_SRAM+=$$(SEARCH_abstraction-rtos))
 	$(info $(MTB__SPACE) RAM reserved for heap: HEAP_SIZE?=$(HEAP_SIZE))
 	$(info $(MTB__SPACE) UART, skip auto detect and force port, UART?=$(UART))
 	$(info $(MTB__SPACE)   UART=auto or undefined, scan ports to auto detect.)

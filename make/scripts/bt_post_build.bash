@@ -42,6 +42,7 @@ set -e
 #   bt_post_build.bash  --shell=<modus shell path>
 #                       --cross=<cross compiler path>
 #                       --toolchain==<TOOLCHAIN>
+#                       --toolchaindir==<TOOLCHAIN base directory>
 #                       --scripts=<wiced scripts path>
 #                       --builddir=<mainapp build dir>
 #                       --elfname=<app elf>
@@ -60,12 +61,16 @@ set -e
 #                       --clflags=<chipload tool flags>
 #                       --extrahex=<hex file to merge>
 #                       --extras=<extra build actions>
+#                       --ld_path=<path to linker script>
+#                       --ld_gen=(0|1) generate linker script or not
+#                       --ld_defs=<definitions needed for linker script>
 #                       --subdsargs=<subds script args>
 #                       --verbose
 #
 #######################################################################################################################
 USAGE="(-s=|--shell=)<shell path> (-x=|--cross=)<cross tools path>"
-USAGE+=" (-t=*|--toolchain=*)<TOOLCHAIN: GCC_ARM or ARM> (-w=|--scripts=)<wiced scripts path>"
+USAGE+=" (-t=|--toolchain=)<TOOLCHAIN: GCC_ARM or ARM> (-w=|--scripts=)<wiced scripts path>"
+USAGE+=" (-h=|--toolchaindir=)<TOOLCHAIN base directory>"
 USAGE+=" (-b=|--builddir=)<build dir> (-e=|--elfname=)<elf name>"
 USAGE+=" (-a=|--appname=)<app name> (-u|--appver=)<app version> (-d=|--hdf=)<hdf file>"
 USAGE+=" (-n=|--entry=)<app entry function> (-l=|--cgslist=)<cgs file list>"
@@ -75,6 +80,7 @@ USAGE+=" (-q=|--chip=)<chip> (-r=|--target=)<target>"
 USAGE+=" (-m=|--minidriver=)<minidriver file> (-c=|--clflags=)<chipload tool flags>"
 USAGE+=" (-j=|--extrahex=)<hex file to merge> (-k=|--extras=)<extra build action>"
 USAGE+=" (--patch=)<patch elf> (--ldargs=)<linker args>"
+USAGE+=" (--ld_gen=)(0|1) (--ld_path=)<path> (--ld_defs=)<linker defines>"
 USAGE+=" (--subdsargs=)<subds script args>"
 
 if [[ $# -eq 0 ]]; then
@@ -91,6 +97,11 @@ do
         ;;
     -t=*|--toolchain=*)
         TOOLCHAIN="${i#*=}"
+        shift
+        ;;
+    -h=*|--toolchaindir=*)
+        TOOLCHAIN_DIR="${i#*=}"
+        TOOLCHAIN_DIR=${TOOLCHAIN_DIR//\\/\/}
         shift
         ;;
     -x=*|--cross=*)
@@ -188,6 +199,14 @@ do
         CY_APP_SUBDS_ARGS="${i#*=}"
         shift
         ;;
+    --ld_path=*)
+        CY_APP_LD_PATH="${i#*=}"
+        shift
+        ;;
+    --ld_gen=*)
+        CY_APP_LD_GEN="${i#*=}"
+        shift
+        ;;
     --ld_defs=*)
         CY_APP_LD_DEFS="${i#*=}"
         shift
@@ -224,29 +243,32 @@ if [ ${VERBOSE} -ne 0 ]; then
     echo 9:  CY_APP_ENTRY         : $CY_APP_ENTRY
     echo 10: CY_APP_CGSLIST       : $CY_APP_CGSLIST
     echo 11: TOOLCHAIN            : $TOOLCHAIN
-    echo 12: CY_APP_SS_CGS        : $CY_APP_SS_CGS
-    echo 13: CY_APP_CGS_ARGS      : $CY_APP_CGS_ARGS
-    echo 14: CY_APP_BTP           : $CY_APP_BTP
-    echo 15: CY_APP_HCI_ID        : $CY_APP_HCI_ID
-    echo 16: CY_APP_BAUDRATE_FILE : $CY_APP_BAUDRATE_FILE
-    echo 17: CY_CHIP              : $CY_CHIP
-    echo 18: CY_TARGET            : $CY_TARGET
-    echo 19: CY_APP_MINIDRIVER    : $CY_APP_MINIDRIVER
-    echo 20: CY_APP_CHIPLOAD_FLAGS: $CY_APP_CHIPLOAD_FLAGS
-    echo 21: CY_APP_MERGE_HEX_NAME: $CY_APP_MERGE_HEX_NAME
-    echo 22: CY_APP_BUILD_EXTRAS  : $CY_APP_BUILD_EXTRAS
-    echo 23: CY_APP_PATCH         : $CY_APP_PATCH
-    echo 24: CY_APP_LD_ARGS       : $CY_APP_LD_ARGS
-    echo 25: CY_APP_SUBDS_ARGS    : $CY_APP_SUBDS_ARGS
-    echo 26: CY_APP_LD_DEFS       : $CY_APP_LD_DEFS
-    echo 27: CY_TOOL_cgs_EXE_ABS   : $CY_TOOL_cgs_EXE_ABS
-    echo 28: CY_TOOL_det_and_id_EXE_ABS : $CY_TOOL_det_and_id_EXE_ABS
-    echo 29: CY_TOOL_append_to_intel_hex_EXE_ABS : $CY_TOOL_append_to_intel_hex_EXE_ABS
-    echo 30: CY_TOOL_head_or_tail_EXE_ABS : $CY_TOOL_head_or_tail_EXE_ABS
-    echo 31: CY_TOOL_intel_hex_merge_EXE_ABS : $CY_TOOL_intel_hex_merge_EXE_ABS
-    echo 32: CY_TOOL_intel_hex_to_bin_EXE_ABS : $CY_TOOL_intel_hex_to_bin_EXE_ABS
-    echo 33: CY_TOOL_intel_hex_to_hcd_EXE_ABS : $CY_TOOL_intel_hex_to_hcd_EXE_ABS
-    echo 34: CY_TOOL_shift_intel_hex_EXE_ABS : $CY_TOOL_shift_intel_hex_EXE_ABS
+    echo 12: TOOLCHAIN_DIR        : $TOOLCHAIN_DIR
+    echo 13: CY_APP_SS_CGS        : $CY_APP_SS_CGS
+    echo 14: CY_APP_CGS_ARGS      : $CY_APP_CGS_ARGS
+    echo 15: CY_APP_BTP           : $CY_APP_BTP
+    echo 16: CY_APP_HCI_ID        : $CY_APP_HCI_ID
+    echo 17: CY_APP_BAUDRATE_FILE : $CY_APP_BAUDRATE_FILE
+    echo 18: CY_CHIP              : $CY_CHIP
+    echo 19: CY_TARGET            : $CY_TARGET
+    echo 20: CY_APP_MINIDRIVER    : $CY_APP_MINIDRIVER
+    echo 21: CY_APP_CHIPLOAD_FLAGS: $CY_APP_CHIPLOAD_FLAGS
+    echo 22: CY_APP_MERGE_HEX_NAME: $CY_APP_MERGE_HEX_NAME
+    echo 23: CY_APP_BUILD_EXTRAS  : $CY_APP_BUILD_EXTRAS
+    echo 24: CY_APP_PATCH         : $CY_APP_PATCH
+    echo 25: CY_APP_LD_ARGS       : $CY_APP_LD_ARGS
+    echo 26: CY_APP_SUBDS_ARGS    : $CY_APP_SUBDS_ARGS
+    echo 27: CY_APP_LD_GEN        : $CY_APP_LD_GEN
+    echo 28: CY_APP_LD_PATH       : $CY_APP_LD_PATH
+    echo 29: CY_APP_LD_DEFS       : $CY_APP_LD_DEFS
+    echo 30: CY_TOOL_cgs_EXE_ABS   : $CY_TOOL_cgs_EXE_ABS
+    echo 31: CY_TOOL_det_and_id_EXE_ABS : $CY_TOOL_det_and_id_EXE_ABS
+    echo 32: CY_TOOL_append_to_intel_hex_EXE_ABS : $CY_TOOL_append_to_intel_hex_EXE_ABS
+    echo 33: CY_TOOL_head_or_tail_EXE_ABS : $CY_TOOL_head_or_tail_EXE_ABS
+    echo 34: CY_TOOL_intel_hex_merge_EXE_ABS : $CY_TOOL_intel_hex_merge_EXE_ABS
+    echo 35: CY_TOOL_intel_hex_to_bin_EXE_ABS : $CY_TOOL_intel_hex_to_bin_EXE_ABS
+    echo 36: CY_TOOL_intel_hex_to_hcd_EXE_ABS : $CY_TOOL_intel_hex_to_hcd_EXE_ABS
+    echo 37: CY_TOOL_shift_intel_hex_EXE_ABS : $CY_TOOL_shift_intel_hex_EXE_ABS
 fi
 
 # check that required files are present
@@ -259,11 +281,6 @@ CY_APP_HEX="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}_download.hex"
 CY_APP_HEX_STATIC="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}_static.hex"
 CY_APP_HEX_SS="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}_ss.hex"
 CY_APP_HCD="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}_download.hcd"
-if [[ $TOOLCHAIN = "ARM" ]]; then
-    CY_APP_LD="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}_postbuild.sct"
-else
-    CY_APP_LD="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}_postbuild.ld"
-fi
 CY_APP_MAP="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}.map"
 
 # check dependencies - only rebuild when needed
@@ -319,51 +336,40 @@ if [[ $CY_APP_BUILD_EXTRAS = *"_DIRECT_LOAD_"* ]]; then
 echo "building image for direct ram load (*.hcd)"
 CY_APP_DIRECT_LOAD="DIRECT_LOAD=1"
 fi
-# generate the linker script
+# to re-link app for LAYOUT=code_from_top, first need to find where load address should start
+# the start is determined by the end of app sram minus the app length
 if [[ $TOOLCHAIN = "ARM" ]]; then
-    #  calculate the room needed to fit app below MPAF sections
-    if [[ $CY_APP_BUILD_EXTRAS = *"_DIRECT_LOAD_"* ]]; then
-        # when whole app is loaded to RAM, add the RO and RW totals
-        APP_IRAM_LENGTH_RW=$("${CY_TOOL_PERL}" -ne 'printf("0x%X", $1) if /Total RW\s+Size .* (\d+) /' "${CY_APP_MAP}")
-        APP_IRAM_LENGTH_RO=$("${CY_TOOL_PERL}" -ne 'printf("0x%X", $1) if /Total RO\s+Size .* (\d+) /' "${CY_APP_MAP}")
-        APP_IRAM_LENGTH=$(printf "0x%x"  $((${APP_IRAM_LENGTH_RW} + ${APP_IRAM_LENGTH_RO})))
-    else
-        # when using flash for RO, just get the app total RW (ram)
-        APP_IRAM_LENGTH=$("${CY_TOOL_PERL}" -ne 'printf("0x%X", $1) if /Total RW\s+Size .* (\d+) /' "${CY_APP_MAP}")
-    fi
+    # previously we used RO +RW - XIP - PSRAM, but this did not account for code/rodata was loaded to RAM
+    # need to get app RAM total (APP_ENTRY + TEXT + DATA + BSS + HEAP) - would be nice to make this more flexible
+    # we match the "Execution Region <name>" lines for the RAM Load Region - this line would need an update if the names change
+    APP_IRAM_LENGTH=$("${CY_TOOL_PERL}" -ne 'BEGIN {my $len=0} $len+=hex($2) if /^\s*Execution Region (APP_ENTRY|TEXT|DATA|BSS|HEAP) .* Size: (0x[0-9a-fA-F]+)/; END {printf "0x%0X" ,$len;}' "${CY_APP_MAP}")
 else
+    # the gcc linker script supports linker generated symbols, so just read value of app_iram_length
     APP_IRAM_LENGTH=$("${CY_TOOL_PERL}" -ne 'print "$1" if /(0x[0-9a-f]+)\s+app_iram_length/' "${CY_APP_MAP}")
 fi
-GEN_LD_COMMAND="\
-    ${CY_TOOL_PERL} -I ${CYWICEDSCRIPTS} ${CYWICEDSCRIPTS}/wiced-gen-linker-script.pl\
-    ${CY_APP_DIRECT_LOAD}\
-    ${CY_APP_PATCH}\
-    BTP=${CY_APP_BTP}\
-    LAYOUT=code_from_top\
-    SRAM_LENGTH=${APP_IRAM_LENGTH}\
-    ${CY_APP_LD_DEFS}\
-    out=${CY_APP_LD}"
-if [ ${VERBOSE} -ne 0 ]; then
-    echo Calling ${GEN_LD_COMMAND}
-fi
-set +e
-eval ${GEN_LD_COMMAND}
-set -e
+
+# modify linker script predefines for LAYOUT=code_from_top
+APP_SRAM_END=$(sed -e "s/.*MTB_LINKSYM_APP_SRAM_END=\(0x[[:xdigit:]]*\).*/\1/" <<< $CY_APP_LD_ARGS)
+APP_SRAM_END_PAD=$(sed -e "s/.*MTB_LINKSYM_APP_SRAM_END_PAD=\(0x[[:xdigit:]]*\).*/\1/" <<< $CY_APP_LD_ARGS)
+APP_SRAM_CODE_FROM_TOP_START=$(printf 0x%X $((${APP_SRAM_END} - ${APP_IRAM_LENGTH} - ${APP_SRAM_END_PAD})))
+APP_IRAM_LENGTH=$(printf 0x%X $((${APP_SRAM_END} - ${APP_SRAM_CODE_FROM_TOP_START})))
+CY_APP_LD_ARGS=$(sed -e "s/\(MTB_LINKSYM_APP_SRAM_START\)=0x[[:xdigit:]]*/\1=${APP_SRAM_CODE_FROM_TOP_START}/" <<< $CY_APP_LD_ARGS)
+CY_APP_LD_ARGS=$(sed -e "s/\(MTB_LINKSYM_APP_SRAM_LENGTH\)=0x[[:xdigit:]]*/\1=${APP_IRAM_LENGTH}/" <<< $CY_APP_LD_ARGS)
 
 # link
 if [[ $TOOLCHAIN = "ARM" ]]; then
     LD_COMMAND="\
-        \"${CY_COMPILER_ARM_DIR}/bin/armlink\"\
+        \"${TOOLCHAIN_DIR//"/ "/" "}/bin/armlink\"\
         -o ${CY_MAINAPP_BUILD_DIR}/${CY_ELF_NAME}\
-        --scatter=${CY_APP_LD}\
+        --scatter=${CY_APP_LD_PATH}\
         --map --list ${CY_APP_MAP/.map/_download.map}\
         ${CY_APP_PATCH}\
         ${CY_APP_LD_ARGS}"
 else
     LD_COMMAND="\
-        "${CYCROSSPATH}gcc"\
+        "${CYCROSSPATH}g++"\
         -o ${CY_MAINAPP_BUILD_DIR}/${CY_ELF_NAME}\
-        -T${CY_APP_LD}\
+        -T${CY_APP_LD_PATH}\
         -Wl,-Map=${CY_APP_MAP/.map/_download.map}\
         -Wl,--entry=${CY_APP_ENTRY}\
         -Wl,--just-symbols=${CY_APP_PATCH}\
@@ -373,31 +379,41 @@ if [ ${VERBOSE} -ne 0 ]; then
     echo Calling ${LD_COMMAND}
 fi
 set +e
-eval ${LD_COMMAND}
+eval "${LD_COMMAND}"
 set -e
 
 # generate asm listing
 if [[ $TOOLCHAIN = "ARM" ]]; then
-    "${CY_COMPILER_ARM_DIR}/bin/fromelf" --text -c "$CY_MAINAPP_BUILD_DIR/$CY_ELF_NAME" > "$CY_MAINAPP_BUILD_DIR/${CY_ELF_NAME/elf/asm}"
+    "${TOOLCHAIN_DIR//"/ "/" "}/bin/fromelf" --text -c "$CY_MAINAPP_BUILD_DIR/$CY_ELF_NAME" > "$CY_MAINAPP_BUILD_DIR/${CY_ELF_NAME/elf/asm}"
 else
     "${CYCROSSPATH}objdump" --disassemble "$CY_MAINAPP_BUILD_DIR/$CY_ELF_NAME" > "$CY_MAINAPP_BUILD_DIR/${CY_ELF_NAME/elf/asm}"
 fi
 
 #create app cgs file
+# first extract defsym/predefine to feed wiced-gen-cgs.pl script
+LD_COMMAND_LINE_DEFS=""
+for i in $CY_APP_LD_ARGS
+do
+  if [[ $TOOLCHAIN = "ARM" ]]; then
+    [[ $i == *"MTB_LINKSYM_APP"* ]] && LD_COMMAND_LINE_DEFS+=" ${i#--predefine=-D}"
+  else
+    [[ $i == "MTB_LINKSYM_APP"* ]] && LD_COMMAND_LINE_DEFS+=" ${i}"
+  fi
+done
 CREATE_CGS_COMMAND="\
     ${CY_TOOL_PERL} -I ${CYWICEDSCRIPTS} ${CYWICEDSCRIPTS}/wiced-gen-cgs.pl\
     ${CY_MAINAPP_BUILD_DIR}/${CY_ELF_NAME}\
     ${CY_APP_DIRECT_LOAD}\
     ${CY_APP_CGSLIST}\
     ${CY_APP_HDF}\
-    "${CY_APP_LD}"\
-    ${CY_APP_BTP}\
+    ${CY_APP_LD_DEFS}\
+    ${LD_COMMAND_LINE_DEFS}\
     out=${CY_MAINAPP_BUILD_DIR}/${CY_MAINAPP_NAME}.cgs > ${CY_MAINAPP_BUILD_DIR}/${CY_MAINAPP_NAME}.report.txt"
 if [ ${VERBOSE} -ne 0 ]; then
     echo Calling ${CREATE_CGS_COMMAND}
 fi
 set +e
-eval ${CREATE_CGS_COMMAND}
+eval "${CREATE_CGS_COMMAND}"
 set -e
 "$CY_TOOL_CAT" "$CY_MAINAPP_BUILD_DIR/$CY_MAINAPP_NAME.report.txt"
 
@@ -429,7 +445,7 @@ if [ ${VERBOSE} -ne 0 ]; then
     echo Calling ${GEN_APP_HEX_COMMAND}
 fi
 set +e
-eval ${GEN_APP_HEX_COMMAND}
+eval "${GEN_APP_HEX_COMMAND}"
 set -e
 if [[ ! -e ${CY_APP_SS_DS_HEX} ]]; then
     echo "!! Post build failed, no app SS/DS hex file output"
@@ -445,7 +461,7 @@ if [ ${VERBOSE} -ne 0 ]; then
     echo Calling ${GEN_APP_SS_BIN_COMMAND}
 fi
 set +e
-eval ${GEN_APP_SS_BIN_COMMAND}
+eval "${GEN_APP_SS_BIN_COMMAND}"
 set -e
 
 echo "Generating app DS bin file"
@@ -455,7 +471,7 @@ if [ ${VERBOSE} -ne 0 ]; then
     echo Calling ${GEN_APP_DS_BIN_COMMAND}
 fi
 set +e
-eval ${GEN_APP_DS_BIN_COMMAND}
+eval "${GEN_APP_DS_BIN_COMMAND}"
 set -e
 
 echo "Creating SubDS config records"
@@ -487,7 +503,7 @@ if [ ${VERBOSE} -ne 0 ]; then
     echo Calling ${GEN_HEX_COMMAND}
 fi
 set +e
-eval ${GEN_HEX_COMMAND}
+eval "${GEN_HEX_COMMAND}"
 set -e
 if [[ ! -e ${CY_APP_HEX} ]]; then
     echo "!! Post build failed, no hex file output"
@@ -501,7 +517,7 @@ if [[ ${CY_APP_MERGE_HEX_NAME} = *"hex"* ]]; then
         echo Calling ${MERGE_CERT_COMMAND}
     fi
     set +e
-    eval ${MERGE_CERT_COMMAND}
+    eval "${MERGE_CERT_COMMAND}"
     set -e
 fi
 
@@ -514,7 +530,7 @@ if [[ $CY_APP_BUILD_EXTRAS = *"_DIRECT_LOAD_"* ]]; then
         echo Calling ${MERGE_DIRECT_LOAD_COMMAND}
     fi
     set +e
-    eval ${MERGE_DIRECT_LOAD_COMMAND}
+    eval "${MERGE_DIRECT_LOAD_COMMAND}"
     set -e
 fi
 
@@ -538,7 +554,7 @@ if [ ${VERBOSE} -ne 0 ]; then
     echo Calling ${OTA_BIN_COMMAND}
 fi
 set +e
-eval ${OTA_BIN_COMMAND}
+eval "${OTA_BIN_COMMAND}"
 set -e
 
 # prepend mdh header
