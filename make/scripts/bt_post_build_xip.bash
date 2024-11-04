@@ -289,17 +289,6 @@ CY_APP_HEX_CERT="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}_cert.hex"
 CY_APP_HCD="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}_download.hcd"
 CY_APP_MAP="$CY_MAINAPP_BUILD_DIR/${CY_MAINAPP_NAME}.map"
 
-# check dependencies - only rebuild when needed
-if [ -e "$CY_APP_HEX" ]; then
-    echo "hex file already exists"
-    if [ "$CY_APP_HEX" -nt "$CY_MAINAPP_BUILD_DIR/$CY_ELF_NAME" ]; then
-      echo
-      echo "hex file is newer than elf, skipping post-build operations"
-      echo "make clean to refresh hex if needed"
-      echo
-      exit 0
-    fi
-fi
 
 # set up some tools that may be native and not modus-shell
 CY_TOOL_WC=wc

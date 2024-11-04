@@ -115,12 +115,6 @@ if [ "$VERBOSE" != "" ]; then
 	echo 7: OVERLAY         : $CY_APP_OVERLAY
 fi
 
-# if *.ld exists, don't make a new one
-# we will always run this until we can have 'make clean' that removes *.ld
-if [ -e "$CY_APP_LD" ]; then
-    echo "$CY_APP_LD already present, use clean if it needs updating"
-    exit 0
-fi
 
 set +e
 

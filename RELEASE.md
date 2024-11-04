@@ -16,6 +16,9 @@ This release of the CYW55513/CYW55913 GNU make build recipe includes complete su
 This also includes the getlibs.bash script that can be used directly, or via the make target to download additional git repo based libraries for the application.
 
 ### What Changed?
+#### v1.3.1
+* Minor bug fixes
+
 #### v1.3.0
 * Optimization for speed changed to optimization for size for the IAR toolchain
 * The feature of setting the default location of the ARM and IAR toolchains has been deprecated

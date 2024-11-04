@@ -166,8 +166,27 @@ CY_RECIPE_EXTRA_LIBS:=$(MTB_RECIPE__EXTRA_LIBS)
 # Prebuild and precompile steps
 #
 ifeq ($(LIBNAME),)
-ifeq ($(LINKER_SCRIPT),)
+#
+# define a macro to check for command line changes in recipes
+# $(call _mtb_recipe__cli_change_check,<cli text>,<cli text file>)
+define _mtb_recipe__cli_change_check
+	$(MTB__NOISE)if [ -f "$2" ]; then \
+	  echo "setting file exists: $2"; \
+	  echo "$1" > "$2.tmp"; \
+	  if ! cmp -s "$2" "$2.tmp"; then \
+	    echo "setting change detected"; \
+	    mv -f "$2.tmp" "$2"; \
+	  else \
+	    rm -f "$2.tmp"; \
+	    exit 0; \
+	  fi; \
+	else \
+	  echo "$1" > "$2"; \
+	fi; \
+	$1
+endef
 
+ifeq ($(LINKER_SCRIPT),)
 #
 # if no linker script given, generate linker script
 #
@@ -189,6 +208,8 @@ CY_RECIPE_PREBUILD?=\
 	cp $(LINKER_SCRIPT) $(MTB_RECIPE__GENERATED_LINKER_SCRIPT)
 
 endif # ifeq ($(LINKER_SCRIPT),)
+
+CY_RECIPE_PREBUILD_FILE=$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/.cyrecipe_prebuild.txt
 
 #
 # for PRECOMPILE recipe, filter all object files by asset search paths listed in PLACE_COMPONENT_IN_SRAM_PATH
@@ -216,21 +237,27 @@ CY_RECIPE_PRECOMPILE?=\
 	sed -i.tmp 's|$(CY_INPUT_SECTION_MATCH)|\1 \
 	$(foreach o_file,$(notdir $(filter $(PLACE_COMPONENT_IN_SRAM_PATH_FILTER),\
 	$(patsubst $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/ext/%,%,\
-	$(_MTB_CORE__BUILD_ALL_OBJ_FILES)))),\n\t\t*$(o_file) $(CY_INPUT_SECTION_SELECT))|' $(MTB_RECIPE__GENERATED_LINKER_SCRIPT);
+	$(_MTB_CORE__BUILD_ALL_OBJ_FILES)))),\n\t\t*$(o_file) $(CY_INPUT_SECTION_SELECT))|' $(MTB_RECIPE__GENERATED_LINKER_SCRIPT)
+
+CY_RECIPE_PRECOMPILE_FILE=$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/.cyrecipe_precompile.txt
 
 # insert the additional PRECOMPILE recipe as precursor to _mtb_build_precompile and dependent on _mtb_build_gensrc
 bsp_prep_mod_linker_script: _mtb_build_gensrc
 
+# run recipe if 1st time or if it has changed
 bsp_mod_linker_script: $(MTB_RECIPE__GENERATED_LINKER_SCRIPT) bsp_prep_mod_linker_script
-	$(CY_RECIPE_PRECOMPILE)
+	$(call _mtb_recipe__cli_change_check,$(CY_RECIPE_PRECOMPILE),$(CY_RECIPE_PRECOMPILE_FILE))  $(MTB__SILENT_OUTPUT)
 
 _mtb_build_precompile: bsp_mod_linker_script
 
 # insert the additional PREBUILD recipe as precursor to project_prebuild and dependent on bsp_prebuild
 bsp_gen_ld_prep_prebuild: bsp_prebuild
 
-bsp_gen_ld_prebuild: bsp_gen_ld_prep_prebuild
-	$(CY_RECIPE_PREBUILD)
+$(MTB_RECIPE__GENERATED_LINKER_SCRIPT):
+	$(call _mtb_recipe__cli_change_check,$(CY_RECIPE_PREBUILD),$(CY_RECIPE_PREBUILD_FILE))  $(MTB__SILENT_OUTPUT)
+
+# run recipe if 1st time or if it has changed
+bsp_gen_ld_prebuild: $(MTB_RECIPE__GENERATED_LINKER_SCRIPT) bsp_gen_ld_prep_prebuild
 
 project_prebuild: bsp_gen_ld_prebuild
 endif # ifeq ($(LIBNAME),)
@@ -283,11 +310,15 @@ _MTB_RECIPE__POSTBUILD:=\
 
 endif
 
-$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).hex: $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).elf
-	$(MTB__NOISE)$(_MTB_RECIPE__POSTBUILD) $(MTB__SILENT_OUTPUT)
+_MTB_RECIPE__POSTBUILD_FILE=$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/.cyrecipe_postbuild.txt
 
+# run postbuild if elf was updated vs hex
+$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).hex: $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).elf
+	$(_MTB_RECIPE__POSTBUILD)
+
+# run postbuild if elf was updated vs hcd
 $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).hcd: $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).elf
-	$(MTB__NOISE)$(_MTB_RECIPE__POSTBUILD) $(MTB__SILENT_OUTPUT)
+	$(_MTB_RECIPE__POSTBUILD)
 
 recipe_postbuild: $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).hex
 

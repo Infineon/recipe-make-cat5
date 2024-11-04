@@ -110,9 +110,23 @@ endif
 ifeq ($(XIP),0)
 APPEXEC=ram
 endif
+# set up to handle app Makefile with PSRAM=1
+PSRAM?=0
+ifeq ($(PSRAM),1)
+# if PSRAM=1, then XIP=0
+XIP=0
+APPEXEC=psram
+endif
+
 APPEXEC?=flash
 
 # APPEXEC provides the preferred application execution location
+# DIRECT_LOAD is undefined and defaults to 1 for 55513 kit
+# the non-generated linker scripts for DIRECT_LOAD=1 are *_direct_load_ram.*
+ifneq ($(DIRECT_LOAD),0)
+_MTB_RECIPE__XIP_FLASH:=
+APPEXEC=direct_load_ram
+else
 ifeq ($(APPEXEC),flash)
 XIP=1
 else
@@ -120,24 +134,19 @@ ifeq ($(APPEXEC),psram)
 PSRAM=1
 else
 ifeq ($(APPEXEC),ram)
-XIP=0
-PSRAM=0
+XIP=
+PSRAM=
 else
-ifneq ($(DIRECT_LOAD),0)
-XIP=0
-PSRAM=0
+ifeq ($(APPEXEC),direct_load_ram)
+_MTB_RECIPE__XIP_FLASH:=
+APPEXEC=direct_load_ram
+DIRECT_LOAD=1
 else
-$(error APPEXEC must be defined as flash, ram, or psram)
+$(error APPEXEC must be defined as flash, ram, psram, or direct_load_ram)
 endif
 endif
 endif
 endif
-
-# set up to handle app Makefile with PSRAM=1
-PSRAM?=0
-ifeq ($(PSRAM),1)
-# if PSRAM=1, then XIP=0
-XIP=0
 endif
 
 ifeq ($(DIRECT_LOAD),1)
