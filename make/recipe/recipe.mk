@@ -28,6 +28,8 @@ ifeq ($(WHICHFILE),true)
 $(info Processing $(lastword $(MAKEFILE_LIST)))
 endif
 
+_MTB_RECIPE__TARG_FILE:=$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).elf
+
 # add recipe setup
 MTB_RECIPE__ENTRY_ARG:=$(MTB_TOOLCHAIN_$(TOOLCHAIN)__ENTRY_ARG)
 MTB_RECIPE__EXTRA_SYMBOLS_ARG:=$(MTB_TOOLCHAIN_$(TOOLCHAIN)__SYMBOLS_ARG)
@@ -104,7 +106,7 @@ MTB_RECIPE__DEFINES?=$(sort \
 	$(CY_CORE_EXTRA_DEFINES)\
 	$(MTB_TOOLCHAIN_DEBUG_DEFINES)\
 	-DSPAR_CRT_SETUP=$(CY_CORE_APP_ENTRY)\
-	$(foreach feature,$(_MTB_RECIPE__COMPONENT_LIST),-DCOMPONENT_$(subst -,_,$(feature)))\
+	$(foreach feature,$(_MTB_RECIPE__COMPONENT_LIST),-DCOMPONENT_$(subst .,_,$(subst -,_,$(feature))))\
 	-DCY_SUPPORTS_DEVICE_VALIDATION\
 	-D$(subst -,_,$(DEVICE))\
 	$(_MTB_RECIPE__CORE_NAME_DEFINES)\
@@ -253,13 +255,15 @@ _mtb_build_precompile: bsp_mod_linker_script
 # insert the additional PREBUILD recipe as precursor to project_prebuild and dependent on bsp_prebuild
 bsp_gen_ld_prep_prebuild: bsp_prebuild
 
-$(MTB_RECIPE__GENERATED_LINKER_SCRIPT):
+$(MTB_RECIPE__GENERATED_LINKER_SCRIPT): bsp_gen_ld_prep_prebuild
 	$(call _mtb_recipe__cli_change_check,$(CY_RECIPE_PREBUILD),$(CY_RECIPE_PREBUILD_FILE))  $(MTB__SILENT_OUTPUT)
 
 # run recipe if 1st time or if it has changed
 bsp_gen_ld_prebuild: $(MTB_RECIPE__GENERATED_LINKER_SCRIPT) bsp_gen_ld_prep_prebuild
 
 project_prebuild: bsp_gen_ld_prebuild
+
+.PHONY: bsp_gen_ld_prebuild bsp_gen_ld_prep_prebuild bsp_prebuild bsp_mod_linker_script
 endif # ifeq ($(LIBNAME),)
 
 #
@@ -300,7 +304,7 @@ _MTB_RECIPE__POSTBUILD:=\
     --ld_path=$(MTB_RECIPE__GENERATED_LINKER_SCRIPT)\
     --ld_gen=$(if $(LINKER_SCRIPT),0,1)\
     --ldargs="$(MTB_RECIPE__LDFLAGS_POSTBUILD)\
-        $(MTB_RECIPE__OBJRSPFILE)$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/objlist.rsp\
+        $(MTB_RECIPE__OBJRSPFILE)$(if $(NINJA),$(_MTB_RECIPE__TARG_FILE).rsp,$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/objlist.rsp)\
         $(MTB_RECIPE__STARTGROUP) $(CY_RECIPE_EXTRA_LIBS) $(MTB_RECIPE__LIBS) $(MTB_RECIPE__ENDGROUP)"\
     --subdsargs="$(CY_CORE_SUBDS_ARGS)"\
     $(if $(_MTB_RECIPE__XIP_FLASH),--subds_start=$(CY_CORE_DS_LOCATION))\
@@ -313,11 +317,11 @@ endif
 _MTB_RECIPE__POSTBUILD_FILE=$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/.cyrecipe_postbuild.txt
 
 # run postbuild if elf was updated vs hex
-$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).hex: $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).elf
+$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).hex: $(_MTB_RECIPE__TARG_FILE)
 	$(_MTB_RECIPE__POSTBUILD)
 
 # run postbuild if elf was updated vs hcd
-$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).hcd: $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).elf
+$(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).hcd: $(_MTB_RECIPE__TARG_FILE)
 	$(_MTB_RECIPE__POSTBUILD)
 
 recipe_postbuild: $(MTB_TOOLS__OUTPUT_CONFIG_DIR)/$(APPNAME).hex

@@ -123,13 +123,13 @@ program: build
 #
 ifeq ($(LIBNAME),)
 
-program qprogram: $(_MTB_CORE__QBUILD_MK_FILE) debug_interface_check
+program qprogram: debug_interface_check
 	@echo "Programming target device ... "
 	$(MTB__NOISE)$(_MTB_RECIPE__DOWNLOAD_CMD)
 	@echo "Programming complete"
 else
-# depends on $(_MTB_CORE__QBUILD_MK_FILE) to locate flash loaders
-qprogram: $(_MTB_CORE__QBUILD_MK_FILE)
+
+qprogram:
 	@echo "Library application detected. Skip programming... ";\
 	echo
 endif

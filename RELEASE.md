@@ -16,6 +16,9 @@ This release of the CYW55513/CYW55913 GNU make build recipe includes complete su
 This also includes the getlibs.bash script that can be used directly, or via the make target to download additional git repo based libraries for the application.
 
 ### What Changed?
+#### v1.4.0
+* Added Ninja support. Ninja build will be enabled by default with ModusToolbox 3.4, and latest core-make. To disable Ninja build set NINJA to empty-String. (For example: "make build NINJA=").
+
 #### v1.3.1
 * Minor bug fixes
 
@@ -50,9 +53,8 @@ This version of the CYW55513/CYW55913 build system was validated for compatibili
 
 | Software and Tools                        | Version |
 | :---                                      | :----:  |
-| ModusToolbox Software Environment         | 3.3     |
+| ModusToolbox Software Environment         | 3.4     |
 | GCC Compiler                              | 11.3    |
-| IAR Compiler                              | 9.3     |
 | ARM Compiler                              | 6.16    |
 
 Minimum required ModusToolbox Software Environment: v3.2
@@ -63,4 +65,3 @@ Minimum required ModusToolbox Software Environment: v3.2
 
 ---
 (c) 2022-2024, Cypress Semiconductor Corporation (an Infineon company) or an affiliate of Cypress Semiconductor Corporation. All rights reserved.
-

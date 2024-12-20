@@ -33,6 +33,8 @@ endif
 MTB_RECIPE__INTERFACE_VERSION:=2
 MTB_RECIPE__EXPORT_INTERFACES:=1 2
 
+MTB_RECIPE__NINJA_SUPPORT:=1
+
 # we do not want a linker script; we generate one in pre-build
 # so give this file just to pass the existence check in recipe_setup.mk
 MTB_RECIPE__LINKER_SCRIPT:=$(lastword $(MAKEFILE_LIST))
