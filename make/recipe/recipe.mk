@@ -7,7 +7,7 @@
 #
 ################################################################################
 # \copyright
-# (c) 2022-2024, Cypress Semiconductor Corporation (an Infineon company) or
+# (c) 2022-2025, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -200,7 +200,7 @@ CY_RECIPE_PREBUILD?=\
 	--defs="$(CY_CORE_LD_DEFS)"\
 	--patch="$(MTB_RECIPE__PATCH_SYMBOLS)"\
 	--ld=$(MTB_RECIPE__GENERATED_LINKER_SCRIPT)\
-	$(if $(findstring 1,$(DIRECT_LOAD)),--direct)\
+	--direct=$(DIRECT_LOAD)\
 	$(if $(VERBOSE),"--verbose")\
 	&& MTB__SILENT_OUTPUT=
 
@@ -346,6 +346,7 @@ make-recipe-cat5-help:
 	$(info $(MTB__SPACE)   XIP=0 specifies code or read-only data to be loaded from FLASH to RAM, except when in sections named .cy_xip. or .cy_psram_*)
 	$(info $(MTB__SPACE)   PSRAM=1 specifies code or read-only data to be loaded from FLASH to PSRAM, except when in sections named .cy_ramfunc  or .cy_xip.)
 	$(info $(MTB__SPACE)   DIRECT_LOAD=1 is for targets without FLASH, building a download image to load directly to the RAM execution locations.)
+	$(info $(MTB__SPACE)   DIRECT_LOAD=2 is for targets without FLASH, building a download image to load directly to the RAM + PSRAM execution locations.)
 	$(info $(MTB__SPACE) If the app Makefile has "LINKER_SCRIPT=", then a linker script will be generated in the build output directory)
 	$(info $(MTB__SPACE) If "LINKER_SCRIPT=<path to a valid linker a script>", then that linker script will be used in the build output directory.)
 	$(info $(MTB__SPACE)   Example linker scripts are in the bsp. Select by setting LINKER_PATH=$$(BSP_LINKER_SCRIPT) in the application Makefile)

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2025, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -43,13 +43,13 @@ set -e
 #						--def=<ld predefines>
 #						--patch=<patch elf file>
 #						--ld=<ld script file>
-#						--direct_load
+#						--direct=<mode>
 #						--overlay=<overlay ld script snippet file>
 #						--verbose
 #
 #######################################################################################################################
 
-USAGE="(-s=|--shell=)<shell path> (-w=|--scripts=)<wiced scripts path> (-f=|--defs=)<linker defines> (-p=|--patch=)<patch elf> (-l=|--ld=)<linker script output> (-o=|--overlay=)<overlay snippet> (-d|--direct)"
+USAGE="(-s=|--shell=)<shell path> (-w=|--scripts=)<wiced scripts path> (-f=|--defs=)<linker defines> (-p=|--patch=)<patch elf> (-l=|--ld=)<linker script output> (-o=|--overlay=)<overlay snippet> (-d=|--direct=)<mode>"
 if [[ $# -eq 0 ]]; then
 	echo "usage: $0 $USAGE"
 	exit 1
@@ -82,8 +82,8 @@ do
 			CY_APP_OVERLAY="${i#*=}"
 			shift
 			;;
-		-d|--direct)
-			CY_APP_DIRECT_LOAD=1
+		-d=*|--direct=*)
+			CY_APP_DIRECT_LOAD="${i#*=}"
 			shift
 			;;
 		-v|--verbose)

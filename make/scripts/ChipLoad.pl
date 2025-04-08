@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2025, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -171,6 +171,21 @@ else
     if($direct_load == 1) {
         print "$chip_load -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -BAUDRATE $detected_baud -BTP $btp_file -NOERASE -CONFIG $config_file ${addl_flags}\n";
         system("$chip_load -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -BAUDRATE $detected_baud -BTP ${btp_file} -NOERASE -CONFIG ${config_file} ${addl_flags} -LOGTO $download_log_path");
+    }
+    elsif($direct_load == 2) {
+        # if chipload supports MINIDRIVERLAUNCHADDRESS, it will include it in help text
+        if($chipload_help =~ /\bMINIDRIVERLAUNCHADDRESS\b/) {
+            print "$chip_load -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -BAUDRATE $detected_baud -NOVERIFY -MINIDRIVER $mini_driver -MINIDRIVERLAUNCHADDRESS 0xFFFFFFFF -BTP $btp_file -NOERASE -CONFIG $config_file ${addl_flags}\n";
+            system("$chip_load -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -BAUDRATE $detected_baud -NOVERIFY -MINIDRIVER $mini_driver -MINIDRIVERLAUNCHADDRESS 0xFFFFFFFF -BTP $btp_file -NOERASE -CONFIG $config_file ${addl_flags} -LOGTO $download_log_path");
+        }
+        else {
+            my $download_minidriver_log_path = $build_loc . "/download_minidriver.log";
+            my $download_application_log_path = $build_loc . "/download_application.log";
+            print "$chip_load -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -BAUDRATE $detected_baud -NOVERIFY -LAUNCHADDRESS 0xFFFFFFFF -BTP $btp_file -CONFIG $mini_driver ${addl_flags}\n";
+            system("$chip_load -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -BAUDRATE $detected_baud -NOVERIFY -LAUNCHADDRESS 0xFFFFFFFF -BTP $btp_file -CONFIG $mini_driver ${addl_flags} -LOGTO $download_minidriver_log_path");
+            print "$chip_load -BLUETOOLMODE -NOHCIRESET -NODLMINIDRIVER -PORT $com_port -BAUDRATE $detected_baud -NOVERIFY -LAUNCHADDRESS 0xFFFFFFFF -BTP $btp_file -CONFIG $config_file ${addl_flags}\n";
+            system("$chip_load -BLUETOOLMODE -NOHCIRESET -NODLMINIDRIVER -PORT $com_port -BAUDRATE $detected_baud -NOVERIFY -LAUNCHADDRESS 0xFFFFFFFF -BTP $btp_file -CONFIG $config_file ${addl_flags} -LOGTO $download_application_log_path");
+        }
     }
     else {
         print "$chip_load -BLUETOOLMODE $enterdownloadmode_param -PORT $com_port -LAUNCHADDRESS 0x00000000 -BAUDRATE $detected_baud -NOVERIFY -MINIDRIVER ${mini_driver} -BTP ${btp_file} -CONFIG $config_file ${addl_flags}\n";

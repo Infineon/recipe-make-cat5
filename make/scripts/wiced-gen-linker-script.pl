@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 #
-# Copyright 2016-2023, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2025, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -34,6 +34,7 @@
 use READELF;
 # read patch.elf and generate linker directive file
 use File::Basename;
+use constant DIRECT_LOAD_RAM => 1;
 
 # call with "perl wiced-gen-linker-script.pl <args>"
 # "patch.elf", "patch.sym", or "patch.symdefs" is parsed to determine where to start the application memory
@@ -41,7 +42,9 @@ use File::Basename;
 # other arguments:
 #   SRAM_BEGIN_ADDR=0x123456, SRAM_LENGTH=0x1234: start and length of SRAM section for app code and data
 #   XIP_LEN=0x1234, XIP_OBJ=abc.o;def.o;ghi.o: execute in place area for on-chip-flash starting at 0x504000, contains code and rodata from listed object files
-#   DIRECT_LOAD=1: indicates RAM download rather than FLASH
+#   DIRECT_LOAD=0: indicates FLASH download
+#   DIRECT_LOAD=1: indicates RAM download
+#   DIRECT_LOAD=2: indicates PSRAM + RAM download
 # To customize code and data location in XIP or RAM:
 #   LINKER_INPUT_SECTION_XIP_ADDITION=list,of,section,matches
 #   LINKER_INPUT_SECTION_RAM_CODE_ADDITION=list,of,section,matches
@@ -251,6 +254,7 @@ sub process_args
     my ($args, $db) = @_;
     my $param = $db->{params};
 
+
     # read linker script type, from file extension
     $param->{'linker_script_type'} = 'gcc' if $args->{out} =~ /\.ld$/;
     $param->{'linker_script_type'} = 'sct' if $args->{out} =~ /\.sct$/;
@@ -272,15 +276,15 @@ sub process_args
     if(defined $args->{DIRECT_LOAD} && $args->{DIRECT_LOAD}) {
         my @region_lut_filtered;
         foreach my $r (@region_lut) {
-            next if $r->{name} eq 'xip';
-            next if $r->{name} eq 'psram';
+            next if $r->{name} eq 'xip';            
+            next if $r->{name} eq 'psram' && $args->{DIRECT_LOAD} == DIRECT_LOAD_RAM;
             push @region_lut_filtered, $r;
         }
         @region_lut = @region_lut_filtered;
         my @section_lut_filtered;
         foreach my $s (@section_lut) {
             next if $s->{name} eq '.app_xip_area';
-            next if $s->{name} eq '.psram';
+            next if $s->{name} eq '.psram' && $args->{DIRECT_LOAD} == DIRECT_LOAD_RAM;
             push @section_lut_filtered, $s;
         }
         @section_lut = @section_lut_filtered;

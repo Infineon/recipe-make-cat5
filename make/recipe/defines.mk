@@ -6,7 +6,7 @@
 #
 ################################################################################
 # \copyright
-# (c) 2022-2024, Cypress Semiconductor Corporation (an Infineon company) or
+# (c) 2022-2025, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -33,7 +33,7 @@ endif
 MTB_RECIPE__INTERFACE_VERSION:=2
 MTB_RECIPE__EXPORT_INTERFACES:=1 2
 
-MTB_RECIPE__NINJA_SUPPORT:=1
+MTB_RECIPE__NINJA_SUPPORT:=1 2
 
 # we do not want a linker script; we generate one in pre-build
 # so give this file just to pass the existence check in recipe_setup.mk
@@ -151,7 +151,18 @@ endif
 endif
 endif
 
-ifeq ($(DIRECT_LOAD),1)
+# Handle memory copy from FLASH to RAM or PSRAM
+ifneq ($(_MTB_RECIPE__XIP_FLASH),)
+ifeq ($(APPEXEC),psram)
+# Do memory copy from FLASH to PSRAM 
+CY_APP_DEFINES+=-DENABLE_MEMCPY=1
+else ifeq ($(APPEXEC),ram)
+# Do memory copy from FLASH to RAM 
+CY_APP_DEFINES+=-DENABLE_MEMCPY=1
+endif
+endif
+
+ifneq (,$(filter $(DIRECT_LOAD),1 2))
 CY_CORE_DIRECT_LOAD=_DIRECT_LOAD_
 CY_CORE_CGS_ARGS+=-O DLConfigSSLocation:$(PLATFORM_DIRECT_LOAD_BASE_ADDR)
 CY_CORE_CGS_ARGS+=-O DLMaxWriteSize:240
@@ -177,6 +188,11 @@ ifeq ($(TRANSPORT),UART)
 CY_APP_DEFINES+=-DWICED_HCI_TRANSPORT=1
 else
 CY_APP_DEFINES+=-DWICED_HCI_TRANSPORT=2
+endif
+
+ifneq (,$(filter $(DIRECT_LOAD),1 2))
+# additional delay to enable work with Client Control
+CY_CORE_APP_CHIPLOAD_FLAGS+=-RTS_DELAY 200
 endif
 
 # special handling for chip download
@@ -205,11 +221,19 @@ CY_CORE_LD_DEFS+=BTP=$(CY_CORE_BTP)
 
 # psram area
 ifneq ($(DIRECT_LOAD),1)
-CY_APP_DEFINES+=-DUSE_PSRAM=1
 PSRAM_START_ADDRESS?=0x02800000
 PSRAM_XIP_LENGTH?=0x800000
+ifeq ($(DIRECT_LOAD),2)
+CY_APP_DEFINES+=-DUSE_PSRAM=1
+MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_PSRAM_START=$(PSRAM_START_ADDRESS)
+MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_PSRAM_LENGTH=$(PSRAM_XIP_LENGTH)
+else
+ifeq ($(DEVICE_$(DEVICE)_DIE),55900A0)
+CY_APP_DEFINES+=-DUSE_PSRAM=1
+endif
 CY_CORE_LD_DEFS+=PSRAM_ADDR=$(PSRAM_START_ADDRESS)
 CY_CORE_LD_DEFS+=PSRAM_LEN=$(PSRAM_XIP_LENGTH)
+endif
 endif
 
 # XIP or flash patch
@@ -235,7 +259,7 @@ endif
 endif
 CY_CORE_PATCH_FW_LEN:=$(shell $(CY_SHELL_STAT_CMD) $(CY_CORE_PATCH_FW))
 CY_CORE_PATCH_SEC_LEN:=$(shell $(CY_SHELL_STAT_CMD) $(CY_CORE_PATCH_SEC))
-CY_CORE_DS_LOCATION:=$(shell printf "0x%08X" $$(($(CY_CORE_PATCH_FW_LEN) + $(CY_CORE_PATCH_SEC_LEN) + 0x680048)))
+CY_CORE_DS_LOCATION:=$(shell printf "0x%08X" $$(($(CY_CORE_PATCH_FW_LEN) + $(CY_CORE_PATCH_SEC_LEN) + $(DS_LOCATION) + 0x48)))
 CY_CORE_LD_DEFS+=DS_LOCATION=$(CY_CORE_DS_LOCATION)
 CY_CORE_XIP_LEN:=$(shell printf "0x%08X" $$(($(CY_FLASH0_LENGTH) - ($(CY_CORE_DS_LOCATION) - $(CY_FLASH0_BEGIN_ADDR) + $(CY_FLASH0_PAD)))))
 CY_CORE_XIP_LEN_LD_DEFS:=XIP_LEN=$(CY_CORE_XIP_LEN)
@@ -279,7 +303,7 @@ MTB_LINKSYM_MPAF_START4 = $(call extract_btp_file_value,POST_MPAF_SECTION_IN_SRA
 MTB_LINKSYM_PRE_INIT_CFG = $(call extract_btp_file_value,gp_wiced_app_pre_init_cfg,$(CY_SYM_FILE_TEXT))
 
 # end of patch sram, used in resource report
-ifeq ($(DIRECT_LOAD),1)
+ifneq (,$(filter $(DIRECT_LOAD),1 2))
 ifneq ($(MTB_LINKSYM_PATCH_SRAM_END_DIRECT_LOAD),)
 MTB_LINKSYM_PATCH_SRAM_END = $(MTB_LINKSYM_PATCH_SRAM_END_DIRECT_LOAD)
 endif
@@ -316,7 +340,7 @@ MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_SRAM_LENGTH=$(shell printf "0x%0
 MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_SRAM_END=$(MTB_LINKSYM_APP_SRAM_END)
 MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_SRAM_END_PAD=$(MTB_LINKSYM_APP_SRAM_END_PAD)
 # only RAM storage defined for DIRECT_LOAD=1
-ifneq ($(DIRECT_LOAD),1)
+ifeq (,$(filter $(DIRECT_LOAD),1 2))
 MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_PSRAM_START=$(PSRAM_START_ADDRESS)
 MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_PSRAM_LENGTH=$(PSRAM_XIP_LENGTH)
 ifneq ($(CY_CORE_DS_LOCATION),)
@@ -325,7 +349,7 @@ endif
 ifneq ($(CY_CORE_XIP_LEN),)
 MTB_RECIPE__LINKER_CLI_SYMBOLS+=MTB_LINKSYM_APP_XIP_LENGTH=$(CY_CORE_XIP_LEN)
 endif
-endif # ifneq ($(DIRECT_LOAD),1)
+endif # ifeq (,$(filter $(DIRECT_LOAD),1 2))
 
 # define heap
 ifneq ($(HEAP_SIZE),)

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2025, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -101,12 +101,12 @@ do
         ;;
     -h=*|--toolchaindir=*)
         TOOLCHAIN_DIR="${i#*=}"
-        TOOLCHAIN_DIR=${TOOLCHAIN_DIR//\\/\/}
+        TOOLCHAIN_DIR=${TOOLCHAIN_DIR//\\/}
         shift
         ;;
     -x=*|--cross=*)
         CYCROSSPATH="${i#*=}"
-        CYCROSSPATH=${CYCROSSPATH//\\/\/}
+        CYCROSSPATH=${CYCROSSPATH//\\/}
         shift
         ;;
     -w=*|--scripts=*)
@@ -347,7 +347,7 @@ CY_APP_LD_ARGS=$(sed -e "s/\(MTB_LINKSYM_APP_SRAM_LENGTH\)=0x[[:xdigit:]]*/\1=${
 # link
 if [[ $TOOLCHAIN = "ARM" ]]; then
     LD_COMMAND="\
-        \"${TOOLCHAIN_DIR//"/ "/" "}/bin/armlink\"\
+        \"${TOOLCHAIN_DIR}/bin/armlink\"\
         -o ${CY_MAINAPP_BUILD_DIR}/${CY_ELF_NAME}\
         --scatter=${CY_APP_LD_PATH}\
         --map --list ${CY_APP_MAP/.map/_download.map}\
@@ -355,7 +355,7 @@ if [[ $TOOLCHAIN = "ARM" ]]; then
         ${CY_APP_LD_ARGS}"
 else
     LD_COMMAND="\
-        "${CYCROSSPATH}g++"\
+        \"${CYCROSSPATH}g++\"\
         -o ${CY_MAINAPP_BUILD_DIR}/${CY_ELF_NAME}\
         -T${CY_APP_LD_PATH}\
         -Wl,-Map=${CY_APP_MAP/.map/_download.map}\
@@ -372,7 +372,7 @@ set -e
 
 # generate asm listing
 if [[ $TOOLCHAIN = "ARM" ]]; then
-    "${TOOLCHAIN_DIR//"/ "/" "}/bin/fromelf" --text -c "$CY_MAINAPP_BUILD_DIR/$CY_ELF_NAME" > "$CY_MAINAPP_BUILD_DIR/${CY_ELF_NAME/elf/asm}"
+    "${TOOLCHAIN_DIR}/bin/fromelf" --text -c "$CY_MAINAPP_BUILD_DIR/$CY_ELF_NAME" > "$CY_MAINAPP_BUILD_DIR/${CY_ELF_NAME/elf/asm}"
 else
     "${CYCROSSPATH}objdump" --disassemble "$CY_MAINAPP_BUILD_DIR/$CY_ELF_NAME" > "$CY_MAINAPP_BUILD_DIR/${CY_ELF_NAME/elf/asm}"
 fi
@@ -500,7 +500,7 @@ fi
 
 if [[ ${CY_APP_MERGE_HEX_NAME} = *"hex"* ]]; then
     echo "Merging the extra hex ${CY_APP_MERGE_HEX_NAME}"
-    MERGE_CERT_COMMAND="${CY_TOOL_intel_hex_merge_EXE_ABS} ${CY_APP_MERGE_HEX_NAME} ${CY_APP_HEX} ${CY_APP_HEX}"
+    MERGE_CERT_COMMAND="${CY_TOOL_intel_hex_merge_EXE_ABS} -L 240 ${CY_APP_MERGE_HEX_NAME} ${CY_APP_HEX} ${CY_APP_HEX}"
     if [ ${VERBOSE} -ne 0 ]; then
         echo Calling ${MERGE_CERT_COMMAND}
     fi
@@ -513,7 +513,7 @@ fi
 if [[ $CY_APP_BUILD_EXTRAS = *"_DIRECT_LOAD_"* ]]; then
     CY_DIRECT_LOAD_HEX=${CY_MAINAPP_BUILD_DIR}/${CY_MAINAPP_NAME}_direct_load.hex
     echo "Merging the DIRECT_LOAD hex ${CY_DIRECT_LOAD_HEX}"
-    MERGE_DIRECT_LOAD_COMMAND="${CY_TOOL_intel_hex_merge_EXE_ABS} ${CY_DIRECT_LOAD_HEX} ${CY_APP_HEX} ${CY_APP_HEX}"
+    MERGE_DIRECT_LOAD_COMMAND="${CY_TOOL_intel_hex_merge_EXE_ABS} -L 240 ${CY_DIRECT_LOAD_HEX} ${CY_APP_HEX} ${CY_APP_HEX}"
     if [ ${VERBOSE} -ne 0 ]; then
         echo Calling ${MERGE_DIRECT_LOAD_COMMAND}
     fi
@@ -528,7 +528,7 @@ echo "Generating hcd file ${CY_APP_HCD}"
 
 # make OTA image
 if [[ $CY_APP_BUILD_EXTRAS = *"_DIRECT_LOAD_"* ]]; then
-echo "No OTA upgrade image build for DIRECT_LOAD=1"
+echo "No OTA upgrade image build for DIRECT_LOAD=1 or 2"
 else
 
 echo "building OTA upgrade image (*.bin)"

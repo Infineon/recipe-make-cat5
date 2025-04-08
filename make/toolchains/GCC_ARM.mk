@@ -1,13 +1,12 @@
 ################################################################################
 # \file GCC_ARM.mk
-# \version 1.0
 #
 # \brief
 # GCC ARM toolchain configuration.
 #
 ################################################################################
 # \copyright
-# Copyright 2018-2024 Cypress Semiconductor Corporation
+# Copyright 2018-2025 Cypress Semiconductor Corporation
 # SPDX-License-Identifier: Apache-2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");

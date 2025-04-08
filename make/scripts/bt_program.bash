@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Copyright 2016-2024, Cypress Semiconductor Corporation (an Infineon company) or
+# Copyright 2016-2025, Cypress Semiconductor Corporation (an Infineon company) or
 # an affiliate of Cypress Semiconductor Corporation.  All rights reserved.
 #
 # This software, including source code, documentation and related
@@ -147,8 +147,8 @@ if [ ! -e "$CY_APP_HEX" ]; then
 fi
 
 dir=${CY_APP_HEX%/*}
-if [ "$DIRECT_LOAD" = "1" ]; then
-    echo "Prepare image for direct ram load (*.hcd)"
+if [ "$DIRECT_LOAD" = "1" ] || [ "$DIRECT_LOAD" = "2" ]; then
+    echo "Prepare image for direct ram (psram) load (*.hcd)"
     CY_APP_HEX=${CY_APP_HEX//.hex/.hcd}
 else
     DIRECT_LOAD="0"
